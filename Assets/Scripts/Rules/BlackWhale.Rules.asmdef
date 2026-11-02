@@ -1,0 +1,6 @@
+{
+  "name": "BlackWhale.Rules",
+  "rootNamespace": "BlackWhale.Rules",
+  "references": ["BlackWhale.Shared"],
+  "noEngineReferences": true
+}

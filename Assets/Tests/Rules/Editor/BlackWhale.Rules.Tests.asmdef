@@ -1,0 +1,8 @@
+{
+  "name": "BlackWhale.Rules.Tests",
+  "rootNamespace": "BlackWhale.Rules.Tests",
+  "references": ["BlackWhale.Shared", "BlackWhale.Rules"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": false
+}
