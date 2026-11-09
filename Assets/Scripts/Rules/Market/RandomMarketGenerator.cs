@@ -14,6 +14,12 @@ namespace BlackWhale.Rules
     ///   value = clamp(previous value + step, -absoluteCap, +absoluteCap), day 0 = 0
     ///   dailyLimit(turn) = round(baseLimit * (1 + 0.05 * (turn - 1))), .5 rounds up (e.g. AUTO turn 2: 367.5 -> 368)
     /// Two distinct free bundles (0..5) are drawn once per company and are the same for every player.
+    ///
+    /// Hidden swing (11/9 meeting): so hidden data cannot be guessed from the visible days and buying it is worth it,
+    /// each company has a <see cref="SwingChancePercent"/> chance per turn of one sharp V or inverted-V move inside
+    /// one NON-public bundle. The day before the bundle and the bundle's last day keep their random-walk values, so the visible
+    /// neighbours give no hint; only the days in between (4 of the 5) move by up to SwingMultiplier x dailyLimit.
+    /// The absolute cap still applies. Inside a swing bundle a single day may move more than dailyLimit.
     /// </summary>
     public sealed class RandomMarketGenerator
     {
@@ -28,6 +34,11 @@ namespace BlackWhale.Rules
         {
             { "BANK", 600 }, { "FOOD", 800 }, { "AUTO", 2000 }, { "AI", 5000 }, { "SPACE", 5000 }, { "BIO", 8000 }
         };
+
+        /// <summary>Chance (0..100) that a company gets a hidden swing in a turn.</summary>
+        public const int SwingChancePercent = 50;
+        /// <summary>Swing size range, in multiples of that turn's daily limit.</summary>
+        public const int SwingMinMultiplier = 3, SwingMaxMultiplier = 5;
 
         private readonly InvestmentRules rules;
         private readonly Dictionary<int, MarketData> generated = new Dictionary<int, MarketData>();
@@ -79,10 +90,29 @@ namespace BlackWhale.Rules
         /// <summary>Pure function of (seed, turn): same inputs always give the same market.</summary>
         public static MarketData Generate(int seed, int turn, InvestmentRules rules = null)
         {
+            int[] unused;
+            return Generate(seed, turn, rules, out unused);
+        }
+
+        /// <summary>
+        /// Server/test helper: which bundle (0..5) got the hidden swing per company, in
+        /// <see cref="InvestmentRules.CompanyIds"/> order, or -1 when that company has none this turn.
+        /// Never send this to clients.
+        /// </summary>
+        public static int[] SwingBundles(int seed, int turn, InvestmentRules rules = null)
+        {
+            int[] swings;
+            Generate(seed, turn, rules, out swings);
+            return swings;
+        }
+
+        private static MarketData Generate(int seed, int turn, InvestmentRules rules, out int[] swings)
+        {
             if (turn < 1) throw new ArgumentOutOfRangeException(nameof(turn));
             rules = rules ?? new InvestmentRules();
             string[] ids = InvestmentRules.CompanyIds;
             var companies = new CompanyMarketData[ids.Length];
+            swings = new int[ids.Length];
             for (int c = 0; c < ids.Length; c++)
             {
                 // Each company has its own stream, so adding/reordering draws elsewhere never changes it.
@@ -100,6 +130,35 @@ namespace BlackWhale.Rules
                 int first = random.NextInclusive(0, InvestmentRules.BundlesPerCompany - 1);
                 int second = random.NextInclusive(0, InvestmentRules.BundlesPerCompany - 2);
                 if (second >= first) second++; // distinct, still uniform
+
+                // Drawn after the walk and the free bundles, so those stay exactly as before.
+                swings[c] = -1;
+                int bundleDays = rules.bundleSizeDays;
+                if (random.NextInclusive(1, 100) <= SwingChancePercent && bundleDays >= 3)
+                {
+                    int pick = random.NextInclusive(0, InvestmentRules.BundlesPerCompany - 3); // 4 hidden bundles
+                    int bundle = 0;
+                    for (int b = 0, k = 0; b < InvestmentRules.BundlesPerCompany; b++)
+                    {
+                        if (b == first || b == second) continue;
+                        if (k++ == pick) { bundle = b; break; }
+                    }
+                    int sign = random.NextInclusive(0, 1) == 0 ? -1 : 1;
+                    int size = random.NextInclusive(SwingMinMultiplier * limit, SwingMaxMultiplier * limit);
+                    // Bundle b shows days b*size+1 .. (b+1)*size. Anchors: the day before it and its own last day
+                    // stay on the walk; only the days strictly between them move.
+                    int start = bundle * bundleDays, end = start + bundleDays;
+                    int peak = random.NextInclusive(start + 1, end - 1);
+                    for (int d = start + 1; d < end; d++)
+                    {
+                        // Linear up to the peak, linear back down to 0 at the bundle's last day.
+                        long offset = d <= peak
+                            ? (long)size * (d - start) / (peak - start)
+                            : (long)size * (end - d) / (end - peak);
+                        days[d] = (int)Math.Max(-cap, Math.Min(cap, days[d] + sign * offset));
+                    }
+                    swings[c] = bundle;
+                }
                 companies[c] = new CompanyMarketData
                 {
                     companyId = ids[c],

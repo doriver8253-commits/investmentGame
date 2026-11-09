@@ -78,19 +78,65 @@ namespace BlackWhale.Rules.Tests
                 for (int turn = 1; turn <= 10; turn += 3)
                 {
                     MarketData m = RandomMarketGenerator.Generate(seed, turn);
-                    foreach (CompanyMarketData c in m.companies)
+                    int[] swings = RandomMarketGenerator.SwingBundles(seed, turn);
+                    for (int i = 0; i < m.companies.Length; i++)
                     {
+                        CompanyMarketData c = m.companies[i];
                         int limit = RandomMarketGenerator.DailyLimitBps(c.companyId, turn);
                         int cap = RandomMarketGenerator.AbsoluteCapBps[c.companyId];
                         for (int d = 1; d <= 30; d++)
                         {
-                            Assert.LessOrEqual(Math.Abs(c.dailyChangesBps[d] - c.dailyChangesBps[d - 1]), limit, c.companyId + " day " + d);
+                            // Days inside the hidden swing bundle may jump more than the daily limit.
+                            bool inSwing = swings[i] >= 0 && d > swings[i] * 5 && d <= swings[i] * 5 + 5;
+                            if (!inSwing)
+                                Assert.LessOrEqual(Math.Abs(c.dailyChangesBps[d] - c.dailyChangesBps[d - 1]), limit, c.companyId + " day " + d);
                             Assert.LessOrEqual(Math.Abs(c.dailyChangesBps[d]), cap, c.companyId + " day " + d);
                             if (Math.Abs(c.dailyChangesBps[d]) == cap) sawCap = true;
                         }
                     }
                 }
             Assert.IsTrue(sawCap, "clamp should be reached sometimes (BANK/FOOD over 30 days)");
+        }
+
+        [Test]
+        public void HiddenSwingOnlyInNonPublicBundlesAboutHalfTheTime()
+        {
+            int total = 0, withSwing = 0, big = 0;
+            var used = new System.Collections.Generic.HashSet<int>();
+            for (int seed = 0; seed < 300; seed++)
+                for (int turn = 1; turn <= 10; turn++)
+                {
+                    MarketData m = RandomMarketGenerator.Generate(seed, turn);
+                    int[] swings = RandomMarketGenerator.SwingBundles(seed, turn);
+                    Assert.AreEqual(m.companies.Length, swings.Length);
+                    for (int i = 0; i < swings.Length; i++)
+                    {
+                        total++;
+                        if (swings[i] < 0) continue;
+                        withSwing++; used.Add(swings[i]);
+                        CollectionAssert.DoesNotContain(m.companies[i].publicBundleIndices, swings[i], "swing must stay hidden");
+                        int limit = RandomMarketGenerator.DailyLimitBps(m.companies[i].companyId, turn);
+                        int[] v = m.companies[i].dailyChangesBps;
+                        bool jump = false;
+                        for (int d = swings[i] * 5 + 1; d <= swings[i] * 5 + 5; d++)
+                            if (Math.Abs(v[d] - v[d - 1]) > limit) jump = true;
+                        if (jump) big++;
+                    }
+                }
+            double rate = (double)withSwing / total;
+            Assert.That(rate, Is.InRange(0.45, 0.55), "about SwingChancePercent of companies per turn");
+            Assert.AreEqual(6, used.Count, "any bundle can hold the swing");
+            Assert.Greater((double)big / withSwing, 0.9, "a swing is a jump bigger than a normal day");
+        }
+
+        [Test]
+        public void HiddenSwingIsDeterministicForSeedAndTurn()
+        {
+            // Same seed/turn twice: identical (pure function), and the swing bundle is part of that result.
+            CollectionAssert.AreEqual(RandomMarketGenerator.SwingBundles(5, 4), RandomMarketGenerator.SwingBundles(5, 4));
+            MarketData a = RandomMarketGenerator.Generate(5, 4), b = new RandomMarketGenerator(5).ForTurn(4);
+            for (int i = 0; i < a.companies.Length; i++)
+                CollectionAssert.AreEqual(a.companies[i].dailyChangesBps, b.companies[i].dailyChangesBps);
         }
 
         [Test]
