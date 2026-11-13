@@ -267,7 +267,7 @@ namespace BlackWhale.UI.View
 
                 bool current = slot.State == PickSlotState.Current;
                 bool done = slot.State == PickSlotState.Done;
-                Color frameColor = current ? (Color)BarChartGraphic.CandidateColor : slot.IsMine ? Palette.Accent : Palette.CardBorder;
+                Color frameColor = current ? ScreenKit.Amber : slot.IsMine ? Palette.Accent : Palette.CardBorder;
                 Color fill = current ? new Color32(0xFE, 0xF3, 0xC7, 0xFF) : done ? Palette.Disabled : slot.IsMine ? Palette.AccentSoft : Palette.Card;
                 var frame = UiKit.Panel(cell, "Frame", frameColor, rounded: true);
                 UiKit.Stretch(frame.rectTransform);
@@ -393,8 +393,16 @@ namespace BlackWhale.UI.View
         }
 
         // 매 프레임 서버 기한의 남은 시간을 표시한다.
+        /// <summary>주식 매수 단계 연출용 남은 시간(소수). TabletView가 서버 시계로 채운다.</summary>
+        public System.Func<double> RemainingExact
+        {
+            get => _stockPage.RemainingExact;
+            set => _stockPage.RemainingExact = value;
+        }
+
         public void Tick()
         {
+            _stockPage.Tick();
             UpdateOrderTimer();
             if (SecondsLeft <= 0)
                 foreach (var button in _body.GetComponentsInChildren<Button>())

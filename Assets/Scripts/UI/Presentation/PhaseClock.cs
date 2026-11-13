@@ -37,6 +37,14 @@ namespace BlackWhale.UI.Presentation
         public static bool HasDeadline(PublicState s)
             => s != null && s.phase != Protocol.Lobby && s.phase != Protocol.Ended && DeadlineOf(s) > 0;
 
+        /// <summary>남은 시간(소수 포함). 막대가 부드럽게 줄어드는 연출용. 마감이 없으면 0.</summary>
+        public double RemainingExact(PublicState s, double localNowSeconds)
+        {
+            if (!HasDeadline(s) || !_synced) return 0;
+            double remain = DeadlineOf(s) - (s.paused ? s.serverElapsedSeconds : EstimatedServerSeconds(localNowSeconds));
+            return remain <= 0 ? 0 : remain;
+        }
+
         public int RemainingSeconds(PublicState s, double localNowSeconds)
         {
             if (!HasDeadline(s) || !_synced) return 0;

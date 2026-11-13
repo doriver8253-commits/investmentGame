@@ -199,12 +199,10 @@ namespace BlackWhale.UI.State
         public bool CanCompleteStep()
         {
             var s = Store.Public;
-            if (s?.developerMode == true && s.stockSystem)
-            {
-                if (s.phase == Protocol.Selection) return CanDraftShares();
-                if (s.phase == Protocol.Investment) return HasCurrentPlayerView && !s.paused && !Store.OrderLocked &&
-                    !Store.HasPending(CommandTypes.SubmitInvestment);
-            }
+            // 주식 모드 투자 단계: 오른쪽 '완료' 버튼이 곧 주문(구간) 확정 버튼(개발자 모드가 아니어도)
+            if (s?.stockSystem == true && s.phase == Protocol.Investment)
+                return HasCurrentPlayerView && !s.paused && !Store.OrderLocked && !Store.HasPending(CommandTypes.SubmitInvestment);
+            if (s?.developerMode == true && s.stockSystem && s.phase == Protocol.Selection) return CanDraftShares();
             return CanFinishPhase();
         }
 
@@ -213,7 +211,7 @@ namespace BlackWhale.UI.State
             if (!CanCompleteStep()) return Block(ErrorCodes.WrongPhase);
             var s = Store.Public;
             if (s.developerMode && s.stockSystem && s.phase == Protocol.Selection) return PassStockDraft();
-            if (s.developerMode && s.stockSystem && s.phase == Protocol.Investment) return SubmitInvestment(CurrentTradeReservations());
+            if (s.stockSystem && s.phase == Protocol.Investment) return SubmitInvestment(CurrentTradeReservations());
             return FinishPhase();
         }
 

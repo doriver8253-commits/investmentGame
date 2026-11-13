@@ -28,14 +28,43 @@ namespace BlackWhale.UI.View
         public static readonly Color32 GridColor = new Color32(0xCB, 0xD0, 0xD8, 0xFF);
         public static readonly Color32 BandColor = new Color32(0x25, 0x63, 0xEB, 0x2E);
         public static readonly Color32 BandEdgeColor = new Color32(0x25, 0x63, 0xEB, 0xCC);
-        public static readonly Color32 CandidateColor = new Color32(0xF5, 0x9E, 0x0B, 0xFF);
-        public static readonly Color32 PreviewOkColor = new Color32(0x05, 0x96, 0x69, 0x30);
-        public static readonly Color32 PreviewBadColor = new Color32(0xDC, 0x26, 0x26, 0x26);
+        public static readonly Color32 CandidateColor = new Color32(0x25, 0x63, 0xEB, 0xFF); // 진입일 후보: 파란색
+        public static readonly Color32 PreviewOkColor = new Color32(0x25, 0x63, 0xEB, 0x30);   // 구간 미리보기: 파란색
+        public static readonly Color32 PreviewBadColor = new Color32(0x6B, 0x72, 0x80, 0x22);  // 불가 구간: 회색(빨간색 대신)
         public static readonly Color32 AllowedColor = new Color32(0x05, 0x96, 0x69, 0x1F);
         public static readonly Color32 AllowedEdgeColor = new Color32(0x05, 0x96, 0x69, 0x8C);
         public static readonly Color32 HoverColor = new Color32(0x11, 0x18, 0x27, 0x22);
 
         private DayBar[] _bars = new DayBar[0];
+
+        // 시장 공개 연출: 공개된 시세가 0일 → 30일 순서로 금빛 선을 따라 휩쓸며 나타난다.
+        // 처음 보는 공개 데이터일 때 한 번만, 모든 차트가 같은 시각 기준으로 움직인다(화면을 다시 그려도 재시작 안 함).
+        public const float RevealSeconds = 2.6f;
+        public static readonly Color32 SweepColor = new Color32(0xF5, 0xB0, 0x0B, 0xFF);
+        private static readonly HashSet<int> s_seenReveals = new HashSet<int>();
+        private static float s_revealStart = -100f;
+        private bool _hasRevealed;
+
+        private float RevealProgressDay
+            => !_hasRevealed || !Application.isPlaying ? 999f : (Time.unscaledTime - s_revealStart) / RevealSeconds * DayAxis.Count;
+
+        private void Update()
+        {
+            if (_hasRevealed && RevealProgressDay <= DayAxis.Count + 2) SetVerticesDirty();
+        }
+
+        private void NoteReveal()
+        {
+            _hasRevealed = false;
+            int key = 17, count = 0;
+            foreach (var b in _bars)
+                if (b.Source == DailyBarModel.RevealedSource && b.Bps.HasValue) { key = key * 31 + b.Day * 7919 + b.Bps.Value; count++; }
+            if (count == 0) return;
+            _hasRevealed = true;
+            if (!Application.isPlaying) return;
+            if (s_seenReveals.Add(key) && Time.unscaledTime - s_revealStart > RevealSeconds + 1f)
+                s_revealStart = Time.unscaledTime;
+        }
         private ChartVerticalRange _verticalRange = ChartVerticalRange.FromVisibleValues(null);
         private readonly List<Vector2Int> _bands = new List<Vector2Int>();
         private RevealedInvestment[] _revealedInvestments = new RevealedInvestment[0];
@@ -63,6 +92,7 @@ namespace BlackWhale.UI.View
         public void SetData(DayBar[] bars)
         {
             _bars = bars ?? new DayBar[0];
+            NoteReveal();
             _verticalRange = ChartVerticalRange.FromVisibleValues(_bars.Where(b => b.Bps.HasValue).Select(b => b.Bps.Value)
                 .Concat(_bars.Where(b => b.Bps.HasValue && b.OpenBps.HasValue).Select(b => b.OpenBps.Value)));
             SetVerticesDirty();
@@ -172,10 +202,12 @@ namespace BlackWhale.UI.View
             float slot = DayAxis.SlotWidth(r.width);
             float zeroY = ValueY(r, 0);
 
-            // 미열람 날짜: 칸 전체 음영
+            float sweep = RevealProgressDay;
+            // 미열람 날짜: 칸 전체 음영(공개 연출 중 아직 선이 지나가지 않은 공개 날짜도 가려 둔다)
             for (int i = 0; i < _bars.Length; i++)
             {
-                if (_bars[i].State != DayBarState.Hidden) continue;
+                bool waiting = _bars[i].Source == DailyBarModel.RevealedSource && _bars[i].Day + 0.5f > sweep;
+                if (_bars[i].State != DayBarState.Hidden && !waiting) continue;
                 float x0 = DayAxis.LeftX(_bars[i].Day, r.xMin, r.width);
                 Quad(vh, x0 + 0.5f, r.yMin, x0 + slot - 0.5f, r.yMax, HiddenColor);
             }
@@ -199,11 +231,13 @@ namespace BlackWhale.UI.View
             {
                 float left = DayAxis.LeftX(_informationRange.Value.x, r.xMin, r.width);
                 float right = DayAxis.LeftX(_informationRange.Value.y, r.xMin, r.width) + slot;
-                var highlight = new Color32(0xD9, 0x77, 0x06, 0x35);
+                // 선택한 구간: 파란색(확정 전 초안)
+                var highlight = new Color32(0x25, 0x63, 0xEB, 0x30);
+                var edge = new Color32(0x25, 0x63, 0xEB, 0xFF);
                 Quad(vh, left, r.yMin, right, r.yMax, highlight);
-                Quad(vh, left, r.yMax - 3, right, r.yMax, new Color32(0xD9, 0x77, 0x06, 0xFF));
-                Quad(vh, left, r.yMin, left + 2, r.yMax, new Color32(0xD9, 0x77, 0x06, 0xFF));
-                Quad(vh, right - 2, r.yMin, right, r.yMax, new Color32(0xD9, 0x77, 0x06, 0xFF));
+                Quad(vh, left, r.yMax - 3, right, r.yMax, edge);
+                Quad(vh, left, r.yMin, left + 2, r.yMax, edge);
+                Quad(vh, right - 2, r.yMin, right, r.yMax, edge);
             }
             foreach (var b in _bands) Band(vh, r, b.x, b.y, BandColor, true);
             for (int p = 0; p < _revealedInvestments.Length; p++)
@@ -245,8 +279,18 @@ namespace BlackWhale.UI.View
             {
                 var bar = _bars[i];
                 if (!bar.Bps.HasValue) continue;
+                bool revealedBar = bar.Source == DailyBarModel.RevealedSource;
+                if (revealedBar && bar.Day + 0.5f > sweep) continue; // 아직 공개 선이 안 지나감
                 float cx = DayAxis.CenterX(bar.Day, r.xMin, r.width);
                 float closeY = ValueY(r, bar.Bps.Value);
+                if (revealedBar && sweep - (bar.Day + 0.5f) < 2f && bar.OpenBps.HasValue)
+                {
+                    // 방금 드러난 봉: 금빛 후광
+                    float glow = 1f - (sweep - (bar.Day + 0.5f)) / 2f;
+                    var halo = SweepColor; halo.a = (byte)(90 * glow);
+                    float oy = ValueY(r, bar.OpenBps.Value);
+                    Quad(vh, cx - bodyW * 0.85f, Mathf.Min(oy, closeY) - 4f, cx + bodyW * 0.85f, Mathf.Max(oy, closeY) + 4f, halo);
+                }
                 byte alpha = bar.Source == DailyBarModel.RevealedSource ? (byte)0x8C : (byte)0xFF;
 
                 if (bar.Move == CandleMove.Unknown || !bar.OpenBps.HasValue)
@@ -271,6 +315,15 @@ namespace BlackWhale.UI.View
                 float y0 = Mathf.Min(openY, closeY), y1 = Mathf.Max(openY, closeY);
                 if (y1 - y0 < 2f) { float m = (y0 + y1) * 0.5f; y0 = m - 1f; y1 = m + 1f; } // 너무 얇은 몸통도 보이게
                 Quad(vh, cx - bodyW * 0.5f, y0, cx + bodyW * 0.5f, y1, color);
+            }
+
+            // 공개 선(지나가는 동안만)
+            if (sweep < DayAxis.Count)
+            {
+                float sx = r.xMin + sweep / DayAxis.Count * r.width;
+                var trail = SweepColor; trail.a = 0x26;
+                Quad(vh, sx - 18f, r.yMin, sx, r.yMax, trail);
+                Quad(vh, sx - 1.5f, r.yMin, sx + 1.5f, r.yMax, SweepColor);
             }
 
             foreach (var b in _bands)
