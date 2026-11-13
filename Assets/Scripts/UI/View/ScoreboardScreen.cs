@@ -173,23 +173,24 @@ namespace BlackWhale.UI.View
             var chartRt = UiKit.Rect(inner, "Chart");
             UiKit.Stretch(chartRt, 48, 34, 14, 40);
             var chart = chartRt.gameObject.AddComponent<LineChartGraphic>();
-            chart.SetRange(1, _turnCount, -limit, limit);
-            for (int t = 1; t <= _turnCount; t++) chart.AddVLine(t, IsSpecialTurn(t) ? new Color32(0xFD, 0xE6, 0x8A, 0xFF) : new Color32(0xEE, 0xF0, 0xF3, 0xFF));
+            chart.SetRange(0, _turnCount, -limit, limit);
+            for (int t = 0; t <= _turnCount; t++) chart.AddVLine(t, IsSpecialTurn(t) ? new Color32(0xFD, 0xE6, 0x8A, 0xFF) : new Color32(0xEE, 0xF0, 0xF3, 0xFF));
             chart.AddHLine(0, Palette.Grid, 1.5f);
             foreach (var p in m.Players)
             {
                 if (p.History.Count == 0) continue;
-                var pts = p.History.Select(h => new Vector2(h.Key, h.Value / 100f)).ToList();
+                var pts = p.History.Where(h => h.Key > 0).Select(h => new Vector2(h.Key, h.Value / 100f)).ToList();
+                pts.Insert(0, Vector2.zero); // 시작 지점: 0턴 0%
                 chart.AddSeries(pts, Palette.Player(p.Id), p.IsMe ? 3.5f : 2f, p.IsMe ? 7f : 5f);
             }
 
             Axis(inner, "+" + limit + "%", new Vector2(0, 1), new Vector2(4, -34));
             Axis(inner, "0%", new Vector2(0, 0.5f), new Vector2(4, 3));
             Axis(inner, "-" + limit + "%", new Vector2(0, 0), new Vector2(4, 48));
-            for (int t = 1; t <= _turnCount; t++)
+            for (int t = 0; t <= _turnCount; t++)
             {
-                var tick = UiKit.Label(chartRt, t + "턴", 9, Palette.SubText, TextAnchor.UpperCenter);
-                UiKit.Place(tick.rectTransform, new Vector2((t - 1) / (float)(_turnCount - 1), 0), new Vector2(0.5f, 1), new Vector2(0, -2), new Vector2(36, 12));
+                var tick = UiKit.Label(chartRt, t == 0 ? "시작" : t + "턴", 9, Palette.SubText, TextAnchor.UpperCenter);
+                UiKit.Place(tick.rectTransform, new Vector2(t / (float)Mathf.Max(1, _turnCount), 0), new Vector2(0.5f, 1), new Vector2(0, -2), new Vector2(36, 12));
             }
 
             // 범례

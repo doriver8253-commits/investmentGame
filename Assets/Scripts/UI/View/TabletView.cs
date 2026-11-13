@@ -12,6 +12,7 @@ using BlackWhale.Shared;
 using BlackWhale.UI.Presentation;
 using BlackWhale.UI.State;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace BlackWhale.UI.View
@@ -50,6 +51,9 @@ namespace BlackWhale.UI.View
 
         // 타이머
         private readonly PhaseClock _clock = new PhaseClock();
+        private UrgencyEdges _urgency;
+        private readonly Dictionary<string, long> _fxAssets = new Dictionary<string, long>(); // 정산 연출용 직전 총자산
+        private readonly Dictionary<string, int> _fxRanks = new Dictionary<string, int>();    // 역전 판단용 직전 순위
         private string _clockKey = "";
         private PublicState _renderedPublic;
         private PlayerView _renderedView;
@@ -126,6 +130,7 @@ namespace BlackWhale.UI.View
             BuildRightColumn();
             BuildTimer();
             BuildBanner();
+            _urgency = new UrgencyEdges(ScreenRect); // 마감 10초 전 붉은 가장자리(팝업보다 아래)
             BuildOverlays();
             BuildTurnIndicator();
             _features = ProgressionPanel.Create(Root, _c, _lobby);
@@ -135,6 +140,22 @@ namespace BlackWhale.UI.View
                 var leave = UiKit.Button(Root, "방 나가기", 12, Palette.Card, Palette.Text, _lobby.Leave);
                 leave.name = "LeaveRoom";
                 UiKit.Place((RectTransform)leave.transform, Vector2.zero, Vector2.zero, new Vector2(42, 2), new Vector2(100, 30));
+            }
+            // 결과 발표·정산 카드·역전 연출 전용 맨 위 레이어.
+            // 결과 단계에서는 '전광판' 창(ProgressionPanel)이 자동으로 열려 화면 전체를 덮기 때문에, 연출을 화면(Screen) 안에 그리면 그 창 뒤에 가려진다.
+            _fxLayer = UiKit.Rect(Root, "ResultFxLayer");
+            UiKit.Stretch(_fxLayer, EdgeSize + 20, EdgeSize + 16, EdgeSize + 20, EdgeSize + 16);
+        }
+
+        private RectTransform _fxLayer;
+        /// <summary>연출을 그릴 곳: 항상 모든 창보다 위(맨 마지막 자식).</summary>
+        private RectTransform FxLayer
+        {
+            get
+            {
+                if (_fxLayer == null) return ScreenRect;
+                _fxLayer.SetAsLastSibling();
+                return _fxLayer;
             }
         }
 
@@ -225,6 +246,7 @@ namespace BlackWhale.UI.View
             _investmentPage = new InvestmentPage(invest, _c, _lobby);
             // 기업 선택 차례의 서버 마감으로 남은 시간을 표시한다. 진행 판정은 서버.
             _investmentPage.RemainingSeconds = () => _clock.RemainingSeconds(Store.Public, Time.realtimeSinceStartup);
+            _investmentPage.RemainingExact = () => _clock.RemainingExact(Store.Public, Time.realtimeSinceStartup);
             _infoPage = new InfoPurchasePage(info, _c, ScreenRect);
             _investmentPage.OpenStockPlan = id => { ShowPage(1); _infoPage.OpenCompany(id); };
 
@@ -445,6 +467,22 @@ namespace BlackWhale.UI.View
             {
                 _lastBoardTurn = board.turn;
                 var top = board.rows.OrderBy(r => r.rank).First();
+                var mine = board.rows.FirstOrDefault(r => r.playerId == _c.LocalPlayerId);
+                // 차트(시장 공개)를 다 본 뒤 최종 결과가 나오는 순간: 매 턴 크게 '결과 발표' → 이어서 내 정산 카드·역전 표시
+                var fx = FxLayer;
+                ResultAnnouncement.Play(fx, board.turn, board.gameComplete);
+                const float afterAnnouncement = 1.8f;
+                if (mine != null)
+                {
+                    long before = _fxAssets.TryGetValue(mine.playerId, out var b) ? b : mine.totalAssets - mine.cumulativeProfit;
+                    int turnNo = board.turn, rank = mine.rank, ret = mine.turnReturnBps; long now = mine.totalAssets; bool complete = board.gameComplete;
+                    DelayedAction.Run(fx, afterAnnouncement, () => SettlementFx.Play(FxLayer, turnNo, complete, rank, ret, before, now));
+                }
+                // 역전: 직전 순위와 비교해 누가 누구를 제쳤는지
+                var reversal = ReversalFx.Describe(_fxRanks, board.rows.Where(r => r != null).Select(r => new KeyValuePair<string, int>(r.playerId, r.rank)),
+                    id => id == _c.LocalPlayerId ? id + "(나)" : id, out bool reversalMine, _c.LocalPlayerId);
+                if (reversal != null) ReversalFx.Play(fx, reversal, reversalMine, afterAnnouncement + 0.8f);
+                foreach (var row in board.rows) if (row != null) { _fxAssets[row.playerId] = row.totalAssets; _fxRanks[row.playerId] = row.rank; }
                 ShowBanner(board.gameComplete ? (s.totalTurns > 0 ? s.totalTurns : 10) + "턴 최종 승자 · " + board.winnerPlayerId :
                     board.turn + "턴 정산 완료 · 1위 " + top.playerId + " (" + DisplayFormat.Percent(top.turnReturnBps) + ")");
             }
@@ -519,6 +557,8 @@ namespace BlackWhale.UI.View
             }
             else _missingViewSince = -1;
             UpdateTimer();
+            UpdateUrgency();
+            ClearDraftsOnOutsideClick();
             if (Store.Public?.phase == Protocol.Selection) _investmentPage.Tick();
             UpdateBanner();
 
@@ -526,11 +566,44 @@ namespace BlackWhale.UI.View
             float e = Mathf.SmoothStep(0, 1, _pageT);
             _pager.anchorMin = new Vector2(-e, 0);
             _pager.anchorMax = new Vector2(2 - e, 1);
-            _pageHint.text = _pageTarget < 0.5f
-                ? "오른쪽 가장자리를 누르면 정보 구매 창으로 넘어갑니다"
-                : "왼쪽 가장자리를 누르면 매수 창으로 넘어갑니다";
+            _pageHint.text = ""; // 화면 아래 안내 문구는 표시하지 않음(가장자리 클릭 이동은 그대로 동작)
 
 
+        }
+
+        private readonly List<RaycastResult> _clickHits = new List<RaycastResult>();
+
+        /// <summary>차트·버튼이 아닌 곳을 누르면 확정(예약·구매)하지 않은 구간 선택 표시를 지운다.</summary>
+        private void ClearDraftsOnOutsideClick()
+        {
+            var mouse = UnityEngine.InputSystem.Mouse.current;
+            if (_infoPage == null || mouse == null || !mouse.leftButton.wasPressedThisFrame || EventSystem.current == null) return;
+            var data = new PointerEventData(EventSystem.current) { position = mouse.position.ReadValue() };
+            _clickHits.Clear();
+            EventSystem.current.RaycastAll(data, _clickHits);
+            if (_clickHits.Count > 0 && _clickHits[0].gameObject != null)
+            {
+                var hit = _clickHits[0].gameObject;
+                if (hit.GetComponentInParent<Selectable>() != null || hit.GetComponentInParent<ChartPointerLayer>() != null
+                    || hit.GetComponentInParent<BarChartGraphic>() != null) return; // 차트·버튼·입력칸을 누른 것
+            }
+            _infoPage.ClearUnconfirmed();
+        }
+
+        /// <summary>단계 마감 10초 전부터 가장자리를 붉게(남을수록 진하게). 시장 공개·정산·대기실·종료·일시정지는 제외.</summary>
+        private void UpdateUrgency()
+        {
+            if (_urgency == null) return;
+            var s = Store.Public;
+            float level = 0f;
+            if (s != null && !s.paused && s.phaseEndsAtServerSeconds > 0
+                && s.phase != Protocol.Lobby && s.phase != Protocol.Ended && s.phase != Protocol.Reveal && s.phase != Protocol.Result)
+            {
+                double remain = s.phaseEndsAtServerSeconds - _clock.EstimatedServerSeconds(Time.realtimeSinceStartup);
+                if (remain > 0 && remain <= 10) level = 0.45f + 0.55f * (float)(1 - remain / 10);
+            }
+            _urgency.SetLevel(level);
+            _urgency.Update();
         }
 
         private void UpdateTimer()
@@ -571,10 +644,12 @@ namespace BlackWhale.UI.View
             bool can = _c.CanCompleteStep();
             bool done = _c.IsDoneForCurrentPhase;
             string label = done ? "완료함 · 대기 중"
-                : s.phase == Protocol.Investment ? (Store.OrderLocked ? "다른 참가자 대기" : "주문 확정 시 진행")
+                : s.phase == Protocol.Investment ? (Store.OrderLocked ? "다른 참가자 대기" : s.stockSystem ? "주문 확정 · 진행" : "주문 확정 시 진행")
                 : s.phase == Protocol.Selection ? (s.stockSystem ? "매수 완료 시 진행" : "선택 시 자동 진행")
                 : "완료";
             if (s.developerMode && can) label = "완료";
+            // 주식 투자 단계에서는 이 버튼이 구간(주문) 확정 버튼이다(매수 화면의 별도 확정 버튼은 없앰).
+            _doneButton.name = s.stockSystem && s.phase == Protocol.Investment ? "ConfirmStockIntervals" : "Button";
             UiKit.SetButton(_doneButton, label, can, can ? Palette.Accent : Palette.Disabled, can ? Color.white : Palette.DisabledText);
         }
 
@@ -632,7 +707,7 @@ namespace BlackWhale.UI.View
         private void OnDoneClicked()
         {
             var status = _c.CompleteStep();
-            if (status == CommandStatus.Sent) ShowBanner("완료했습니다. 다른 참가자를 기다립니다.");
+            if (status == CommandStatus.Sent) ShowBanner(Store.Public?.phase == Protocol.Investment ? "주문을 확정했습니다." : "완료했습니다. 다른 참가자를 기다립니다.");
         }
 
         // ------------------------------------------------------------------
@@ -646,7 +721,7 @@ namespace BlackWhale.UI.View
             PositionNextTo(popup, slot, rightSide: true);
 
             var r = row.Score;
-            string title = "<b>" + row.PlayerId + (row.PlayerId == _c.LocalPlayerId ? " (나)" : "") + "</b>  <size=12>직업 미정</size>";
+            string title = "<b>" + row.PlayerId + (row.PlayerId == _c.LocalPlayerId ? " (나)" : "") + "</b>";
             string body = r == null
                 ? "\n<color=#6B7280>아직 정산 결과가 없습니다.</color>"
                 : "\n이번 턴 수익률  <b><color=#" + ColorUtility.ToHtmlStringRGB(Palette.ForBps(r.turnReturnBps)) + ">" + DisplayFormat.Percent(r.turnReturnBps) + "</color></b>"
@@ -706,7 +781,8 @@ namespace BlackWhale.UI.View
             chart.AddHLine(0, Palette.Grid);
             foreach (var r in list)
             {
-                var pts = (r.returnHistory ?? new ReturnPoint[0]).OrderBy(p => p.turn).Select(p => new Vector2(p.turn, p.returnBps)).ToList();
+                var pts = (r.returnHistory ?? new ReturnPoint[0]).Where(p => p != null && p.turn > 0).OrderBy(p => p.turn).Select(p => new Vector2(p.turn, p.returnBps)).ToList();
+                pts.Insert(0, Vector2.zero); // 시작 지점: 0턴 0%
                 chart.AddSeries(pts, Palette.Player(r.playerId), 2.5f, 5f);
             }
 
@@ -769,7 +845,7 @@ namespace BlackWhale.UI.View
     {
         private readonly int _index;
         private readonly Image _border;
-        private readonly Text _text, _assets, _job;
+        private readonly Text _text, _assets;
         private readonly RectTransform _rt;
         private RankRow _row;
         private string _delta = "";
@@ -787,17 +863,17 @@ namespace BlackWhale.UI.View
             var inner = UiKit.Panel(_border.transform, "Inner", Palette.Card, rounded: true);
             UiKit.Stretch(inner.rectTransform, 3, 3, 3, 3);
             _text = UiKit.Label(inner.transform, "", 13, Palette.Text, TextAnchor.UpperCenter);
-            UiKit.Stretch(_text.rectTransform, 2, 5, 2, 30);
-            _assets = UiKit.Label(inner.transform, "", 11, Palette.Text, TextAnchor.MiddleCenter);
+            UiKit.Stretch(_text.rectTransform, 2, 5, 2, 36);
+            // 보유 금액(총자산): 크게 표시. '직업 미정' 줄은 없앴다.
+            _assets = UiKit.Label(inner.transform, "", 17, Palette.Text, TextAnchor.MiddleCenter, FontStyle.Bold);
+            _assets.name = "RankAssets";
             UiKit.Stretch(_assets.rectTransform, 2, 0, 2, 0);
             _assets.rectTransform.anchorMax = new Vector2(1, 0);
-            _assets.rectTransform.offsetMin = new Vector2(2, 15);
-            _assets.rectTransform.offsetMax = new Vector2(-2, 30);
-            _job = UiKit.Label(inner.transform, "직업 미정", 10, Palette.SubText, TextAnchor.MiddleCenter);
-            UiKit.Stretch(_job.rectTransform, 2, 0, 2, 0);
-            _job.rectTransform.anchorMax = new Vector2(1, 0);
-            _job.rectTransform.offsetMin = new Vector2(2, 2);
-            _job.rectTransform.offsetMax = new Vector2(-2, 15);
+            _assets.rectTransform.offsetMin = new Vector2(1, 6);
+            _assets.rectTransform.offsetMax = new Vector2(-1, 34);
+            _assets.resizeTextForBestFit = true; // 금액이 길어지면 칸 안에 맞게 자동으로 줄임
+            _assets.resizeTextMinSize = 11;
+            _assets.resizeTextMaxSize = 17;
 
             UiKit.Hover(bg.gameObject, () => owner.ShowPlayerPopup(_row, _rt), owner.HidePopup);
         }

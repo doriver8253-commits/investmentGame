@@ -21,6 +21,8 @@ namespace BlackWhale.UI.View
         public System.Func<int, int, int, string> EditInterval;
         public System.Action<int> DeleteInterval;
         public System.Action RangeChanged;
+        /// <summary>드래그(또는 클릭)로 구간 고르기를 마친 순간. 투자 결정 단계에서는 이때 바로 진입·청산을 정한다.</summary>
+        public System.Action RangeFinished;
         public string LastEditError { get; private set; } = "";
         private bool _rangeDown;
         private InputAction _deleteAction;
@@ -116,6 +118,7 @@ namespace BlackWhale.UI.View
                 if (!string.IsNullOrEmpty(LastEditError)) RangeSelection.Restore(Intervals?.Invoke() ?? new Interval[0]);
             }
             RangeChanged?.Invoke();
+            RangeFinished?.Invoke();
         }
         public void DeleteSelectedRange()
         {

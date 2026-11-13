@@ -317,7 +317,7 @@ namespace BlackWhale.UI.Tests
                 ClickPlanning(canvas, "ExpandShare_AI");
                 yield return new WaitForSecondsRealtime(.4f); Canvas.ForceUpdateCanvases();
                 var pointer = canvas.GetComponentsInChildren<ChartPointerLayer>().Single(p => p.name == "ZoomChart_AI");
-                DragChart(pointer, 3, 5); ClickPlanning(canvas, "ReserveRange");
+                DragChart(pointer, 3, 5); // 투자 단계: 드래그하면 바로 진입·청산으로 정해짐(예약하기 클릭 없음)
                 var save = client.Sent.Single(c => c.type == CommandTypes.SaveTradePlan);
                 Assert.AreEqual(1, save.payload.investments.Length); Assert.AreEqual("AI", save.payload.investments[0].companyId);
                 Assert.AreEqual(3, save.payload.investments[0].intervals[0].entryDay); Assert.AreEqual(5, save.payload.investments[0].intervals[0].exitDay);
@@ -327,7 +327,7 @@ namespace BlackWhale.UI.Tests
                 ClickPlanning(canvas, "ExpandShare_BANK");
                 yield return new WaitForSecondsRealtime(.4f); Canvas.ForceUpdateCanvases();
                 var bankPointer = canvas.GetComponentsInChildren<ChartPointerLayer>().Single(p => p.name == "ZoomChart_BANK");
-                DragChart(bankPointer, 8, 12); ClickPlanning(canvas, "ReserveRange");
+                DragChart(bankPointer, 8, 12); // 투자 단계: 드래그하면 바로 진입·청산으로 정해짐(예약하기 클릭 없음)
                 Assert.AreEqual(8, controller.CurrentTradeReservations().Single(i => i.companyId == "BANK").intervals[0].entryDay);
                 tablet.ShowPage(0); yield return new WaitForSecondsRealtime(.4f);
                 ClickPlanning(canvas, "ConfirmStockIntervals");

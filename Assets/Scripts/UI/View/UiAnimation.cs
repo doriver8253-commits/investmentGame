@@ -51,6 +51,39 @@ namespace BlackWhale.UI.View
             Slide(rt, to - new Vector2(0, distance), to, seconds, delay);
         }
 
+        /// <summary>delay 뒤에 서서히 사라짐(끝나면 숨김). 알림 배너용.</summary>
+        public static void FadeOut(RectTransform rt, float delay = 1f, float seconds = 0.4f)
+        {
+            if (rt == null) return;
+            if (!Application.isPlaying) { rt.gameObject.SetActive(false); return; }
+            var group = Get<CanvasGroup>(rt.gameObject);
+            Get<FadeOutAnim>(rt.gameObject).Begin(group, seconds, delay);
+        }
+
+        /// <summary>카드 뒤집기 등장: 뒷면(어두운 면 + ?)이 보이다가 가로로 접혔다 펴지며 앞면이 나타난다.
+        /// 같은 key는 한 번만 재생한다(화면을 다시 그려도 반복하지 않음). Play 중이 아니면 바로 앞면.</summary>
+        public static void FlipIn(RectTransform card, string key, float delay = 0f, float seconds = 0.55f)
+        {
+            if (card == null || !Application.isPlaying) return;
+            // 같은 key: 처음 시각을 기억해 두고, 화면이 다시 그려져도 남은 부분만 이어서 재생(끝났으면 그냥 앞면)
+            float now = Time.unscaledTime, elapsed = 0f;
+            if (!string.IsNullOrEmpty(key))
+            {
+                if (s_flipStart.TryGetValue(key, out var started)) elapsed = now - started;
+                else s_flipStart[key] = now;
+                if (elapsed >= delay + seconds) return;
+            }
+            var back = UiKit.Panel(card, "CardBack", new Color32(0x1E, 0x29, 0x3B, 0xFF), rounded: true);
+            UiKit.Stretch(back.rectTransform);
+            back.raycastTarget = true; // 뒤집히는 동안 클릭 막기
+            var mark = UiKit.Label(back.transform, "?", 64, new Color32(0xFB, 0xBF, 0x24, 0xFF), TextAnchor.MiddleCenter, FontStyle.Bold);
+            UiKit.Stretch(mark.rectTransform);
+            back.transform.SetAsLastSibling();
+            Get<FlipAnim>(card.gameObject).Begin(card, back.gameObject, seconds, delay - elapsed);
+        }
+
+        private static readonly System.Collections.Generic.Dictionary<string, float> s_flipStart = new System.Collections.Generic.Dictionary<string, float>();
+
         /// <summary>0~1 진행도를 ease-out(빠르게 출발, 부드럽게 멈춤)으로.</summary>
         public static float EaseOut(float t)
         {
@@ -165,6 +198,63 @@ namespace BlackWhale.UI.View
             _t += Time.unscaledDeltaTime / _seconds;
             _group.alpha = Mathf.Clamp01(_t);
             if (_t >= 1f) { _group.alpha = 1f; _running = false; }
+        }
+    }
+
+    public sealed class FadeOutAnim : MonoBehaviour
+    {
+        private CanvasGroup _group;
+        private float _t, _seconds, _delay;
+        private bool _running;
+
+        public void Begin(CanvasGroup group, float seconds, float delay)
+        {
+            _group = group; _seconds = seconds; _delay = delay; _t = 0f; _running = true;
+        }
+
+        private void Update()
+        {
+            if (!_running || _group == null) return;
+            if (_delay > 0f) { _delay -= Time.unscaledDeltaTime; return; }
+            _t += Time.unscaledDeltaTime / _seconds;
+            _group.alpha = 1f - Mathf.Clamp01(_t);
+            if (_t >= 1f) { _running = false; gameObject.SetActive(false); }
+        }
+    }
+
+    public sealed class FlipAnim : MonoBehaviour
+    {
+        private RectTransform _card;
+        private GameObject _back;
+        private float _t, _seconds, _delay;
+        private bool _running;
+
+        /// <param name="delay">음수면 이미 그만큼 진행된 상태에서 시작</param>
+        public void Begin(RectTransform card, GameObject back, float seconds, float delay)
+        {
+            _card = card; _back = back; _seconds = seconds; _running = true;
+            _delay = Mathf.Max(0f, delay);
+            _t = delay < 0f ? -delay / seconds : 0f;
+            if (_t >= 0.5f && _back != null) { Destroy(_back); _back = null; }
+        }
+
+        private void Update()
+        {
+            if (!_running || _card == null) return;
+            if (_delay > 0f) { _delay -= Time.unscaledDeltaTime; return; }
+            _t += Time.unscaledDeltaTime / _seconds;
+            float p = Mathf.Clamp01(_t);
+            // 앞 절반: 뒷면이 접히고(가로 1→0), 뒤 절반: 앞면이 펴짐(0→1). 가운데서 살짝 떠오름.
+            float sx = Mathf.Abs(Mathf.Cos(p * Mathf.PI));
+            float lift = 1f + 0.06f * Mathf.Sin(p * Mathf.PI);
+            _card.localScale = new Vector3(Mathf.Max(0.001f, sx) * lift, lift, 1f);
+            if (p >= 0.5f && _back != null) { Destroy(_back); _back = null; }
+            if (p >= 1f)
+            {
+                _card.localScale = Vector3.one;
+                if (_back != null) Destroy(_back);
+                _running = false;
+            }
         }
     }
 }

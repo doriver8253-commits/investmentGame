@@ -22,6 +22,10 @@ namespace BlackWhale.UI.View
         public Action<int> Changed;
         public Action Reserve;
         public Func<bool> CanReserve;
+        /// <summary>고른 구간이 이미 정한 예약일 때 취소할 수 있는지.</summary>
+        public Func<bool> CanCancel;
+        /// <summary>고른 예약 구간 취소.</summary>
+        public Action CancelReservation;
         public InformationWindowSelector(RectTransform parent, GameClientController controller, Func<string> companyId)
         {
             this.controller = controller; this.companyId = companyId;
@@ -34,7 +38,10 @@ namespace BlackWhale.UI.View
             confirm.name = "ConfirmInformationWindow";
             var rt = (RectTransform)confirm.transform; rt.anchorMin = Vector2.zero; rt.anchorMax = new Vector2(.5f, 0);
             rt.offsetMin = Vector2.zero; rt.offsetMax = new Vector2(-3, 24);
-            reserve = UiKit.Button(Root, "예약하기", 11, Palette.AccentSoft, Palette.Accent, () => Reserve?.Invoke());
+            reserve = UiKit.Button(Root, "예약하기", 11, Palette.AccentSoft, Palette.Accent, () =>
+            {
+                if (Selection.SelectedIndex >= 0) CancelReservation?.Invoke(); else Reserve?.Invoke();
+            });
             reserve.name = "ReserveRange";
             rt = (RectTransform)reserve.transform; rt.anchorMin = new Vector2(.5f, 0); rt.anchorMax = new Vector2(1, 0);
             rt.offsetMin = new Vector2(3, 0); rt.offsetMax = new Vector2(0, 24);
@@ -68,9 +75,11 @@ namespace BlackWhale.UI.View
             if (planning && Selection.HasSelection) status.text = StartDay + "일 시가 → " + EndDay + "일 종가";
             UiKit.SetButton(confirm, pending ? "요청 중…" : choosing ? "공용 공개" : "정보 사기", can,
                 can ? Palette.Accent : Palette.Disabled, can ? Color.white : Palette.DisabledText);
-            bool reserveCan = active && !choosing && Selection.HasSelection && CanReserve?.Invoke() == true;
-            UiKit.SetButton(reserve, Selection.SelectedIndex >= 0 ? "예약 변경" : "예약하기", reserveCan,
-                reserveCan ? Palette.AccentSoft : Palette.Disabled, reserveCan ? Palette.Accent : Palette.DisabledText);
+            // 이미 정한 구간(예약)을 고른 상태면 '예약 취소' = 그 매수·청산 구간을 지운다
+            bool existing = Selection.SelectedIndex >= 0;
+            bool reserveCan = active && !choosing && Selection.HasSelection && (existing ? CanCancel?.Invoke() == true : CanReserve?.Invoke() == true);
+            UiKit.SetButton(reserve, existing ? "예약 취소" : "예약하기", reserveCan,
+                reserveCan ? (existing ? Palette.Card : Palette.AccentSoft) : Palette.Disabled, reserveCan ? (existing ? Palette.Up : Palette.Accent) : Palette.DisabledText);
         }
     }
 }
