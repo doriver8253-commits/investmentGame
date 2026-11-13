@@ -37,6 +37,7 @@ namespace BlackWhale.Rules.Information
             if (c.Phase != Protocol.Info) return "WRONG_PHASE";
             if (!source.GetCompanyIds().Contains(company)) return "INVALID_COMPANY";
             if (start < 1 || start > 30 || length < 1 || length > 31 - start) return "INVALID_WINDOW";
+            if (length != 5) return ErrorCodes.InformationWindowNotFiveDays;
             return "";
         }
         private RuleResult WindowRequest(RequestContext c, string fingerprint, Func<RuleResult> action)
@@ -57,6 +58,18 @@ namespace BlackWhale.Rules.Information
                 recordId = p.recordId, remainingCoins = p.remainingCoins, paidCoins = p.paidCoins, automatic = p.automatic });
         }
         private static bool Accessible(WindowRecord r, string player) => r.Source == "PUBLIC" || r.Player == player;
+        private static bool IsTooClose(WindowRecord existing, string player, string company, int start, int length, bool publicOnly)
+        {
+            if (existing.Company != company || (publicOnly ? existing.Source != "PUBLIC" : !Accessible(existing, player))) return false;
+
+            // 두 정보 창 사이에는 최소 4일의 미공개 공백을 둔다.
+            // 예: 1~5일 다음은 6~9일을 건너뛴 10~14일부터 가능하다.
+            int nextAllowedAfterExisting = existing.Start + existing.Length + InformationWindowRules.MinimumGapDays;
+            int nextAllowedAfterCandidate = start + length + InformationWindowRules.MinimumGapDays;
+            return start < nextAllowedAfterExisting && existing.Start < nextAllowedAfterCandidate;
+        }
+        private static bool HasTooCloseWindow(WindowTurn state, string player, string company, int start, int length, bool publicOnly)
+            => state.Records.Any(r => IsTooClose(r, player, company, start, length, publicOnly));
         private bool[] Mask(WindowTurn state, string player, string company, bool publicOnly = false, WindowRecord except = null)
         {
             var mask = new bool[31]; mask[0] = true;
@@ -91,6 +104,7 @@ namespace BlackWhale.Rules.Information
                 if (revealed.Any(r => r.Player == c.PlayerId)) return new RuleResult("ALREADY_REVEALED");
                 var mask = Mask(state, c.PlayerId, company, true);
                 if (Enumerable.Range(start, 5).Any(d => mask[d])) return new RuleResult("PUBLIC_WINDOW_OVERLAP");
+                if (HasTooCloseWindow(state, c.PlayerId, company, start, 5, true)) return new RuleResult(ErrorCodes.InformationWindowTooClose);
                 return WindowResult(c, AddWindow(c, company, start, "PUBLIC", 0, automatic));
             });
         }
@@ -105,6 +119,8 @@ namespace BlackWhale.Rules.Information
                 var mask = Mask(state, c.PlayerId, company);
                 int newDays = Enumerable.Range(start, length).Count(d => !mask[d]);
                 if (newDays == 0) return new RuleResult("ALREADY_VISIBLE");
+                if (HasTooCloseWindow(state, c.PlayerId, company, start, length, false))
+                    return new RuleResult(ErrorCodes.InformationWindowTooClose);
                 // Read before charging, so unavailable data never consumes a coin/credit.
                 ((IWindowMarketDataSource)source).GetWindow(c.Turn, company, start, length);
                 var feature = FeaturePlayer(c.RoomId, c.PlayerId);
@@ -169,7 +185,7 @@ namespace BlackWhale.Rules.Information
                 RuleResult result;
                 if (blackbox)
                 {
-                    int length = Math.Min(5, 31 - start);
+                    int length = 5;
                     string error = ValidateWindow(c, company, start, length); if (error != "") return new RuleResult(error);
                     if (Enumerable.Range(start, length).All(d => Mask(state, c.PlayerId, company)[d])) return new RuleResult("ALREADY_VISIBLE");
                     ((IWindowMarketDataSource)source).GetWindow(c.Turn, company, start, length);

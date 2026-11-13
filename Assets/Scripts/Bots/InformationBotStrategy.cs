@@ -35,7 +35,7 @@ namespace BlackWhale.Bots
         {
             foreach (var company in view.companies.OrderBy(c => (state.publicInformation ?? Array.Empty<PublicInformationChoice>()).Count(w => w.companyId == c.companyId)))
                 for (int start = 1; start <= 26; start++)
-                    if (!InformationWindowRules.OverlapsPublic(state, company.companyId, start))
+                    if (!InformationWindowRules.TooCloseToPublic(state, company.companyId, start))
                         return new InformationPurchase { CompanyId = company.companyId, StartDay = start };
             return null;
         }
@@ -52,9 +52,10 @@ namespace BlackWhale.Bots
                     {
                         if (attempted.Contains(company.companyId + ":" + start)) continue;
                         int budget = view.coins + (view.ability?.freeInformationCredits ?? 0);
-                        int end = Math.Min(30, start + Math.Min(5, budget) - 1);
+                        int end = start + InformationWindowRules.Length - 1;
+                        if (end > 30 || InformationWindowRules.TooCloseToKnown(company, start)) continue;
                         int newDays = InformationWindowRules.NewDays(company, start, end);
-                        if (newDays == 0) continue;
+                        if (newDays == 0 || newDays > budget) continue;
                         int potential = newDays;
                         for (int d = start; d <= end; d++)
                             if (!days[d].HasValue)
@@ -86,13 +87,13 @@ namespace BlackWhale.Bots
             var days = KnownDays(view?.companies?.FirstOrDefault(c => c.companyId == companyId));
             var entryValues = view?.entryAtOpen == true ? InformationWindowRules.KnownOpens(view.companies?.FirstOrDefault(c => c.companyId == companyId)) : days;
             var candidates = new List<Plan>();
-            for (int entry = 0; entry <= (view?.entryAtOpen == true ? 26 : 25); entry++)
-                for (int exit = entry + 5 - (view?.entryAtOpen == true && entry > 0 ? 1 : 0); exit <= Math.Min(30, entry + 10 - (view?.entryAtOpen == true && entry > 0 ? 1 : 0)); exit++)
+                for (int entry = 0; entry <= 23; entry++)
+                for (int exit = entry + 7; exit <= 30; exit++)
                     if (entryValues[entry].HasValue && days[exit].HasValue)
                         candidates.Add(new Plan { Company = companyId, Score = (long)days[exit].Value - entryValues[entry].Value,
                             Intervals = new[] { new Interval { entryDay = entry, exitDay = exit } } });
             if (candidates.Count == 0) return new Plan { Company = companyId, Score = 0,
-                Intervals = new[] { new Interval { entryDay = 0, exitDay = 5 } } };
+                Intervals = new[] { new Interval { entryDay = 0, exitDay = 7 } } };
             if (Policy.Difficulty == BotDifficulty.Easy)
             {
                 var positive = candidates.Where(c => c.Score > 0).ToArray();
@@ -130,7 +131,7 @@ namespace BlackWhale.Bots
             if (Policy.Difficulty == BotDifficulty.Hard && !fallback) plans = plans.OrderByDescending(p => p.Score).ToArray();
             int firstWeight = Policy.Difficulty == BotDifficulty.Hard && !fallback && plans[0].Score > plans[1].Score ? 7000 : 5000;
             return plans.Select((p, i) => new Investment { companyId = p.Company, weightBps = i == 0 ? firstWeight : 10000 - firstWeight,
-                intervals = fallback ? new[] { new Interval { entryDay = 0, exitDay = 5 } } : p.Intervals.Select(t =>
+                intervals = fallback ? new[] { new Interval { entryDay = 0, exitDay = 7 } } : p.Intervals.Select(t =>
                     new Interval { entryDay = t.entryDay, exitDay = t.exitDay }).ToArray() }).ToArray();
         }
     }

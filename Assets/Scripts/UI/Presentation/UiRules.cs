@@ -12,6 +12,8 @@ namespace BlackWhale.UI.Presentation
         public const int BundleCount = 6;
         public const int MinHoldingDays = 5;
         public const int MaxHoldingDays = 10;
+        public const int StockMinHoldingDays = 7;
+        public const int StockMaxHoldingDays = 30;
         public const int MaxIntervalsPerCompany = 2;
         public const int CompaniesPerOrder = 2;
         public const int TotalWeightBps = 10000;

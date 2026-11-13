@@ -67,14 +67,16 @@ namespace BlackWhale.UI.Presentation
                 || (iv.exitDay == iv.entryDay && (!entryAtOpen || iv.entryDay == 0)))
                 return ErrorCodes.InvalidDay;
 
-            int holding = iv.exitDay - iv.entryDay + (entryAtOpen && iv.entryDay > 0 ? 1 : 0);
-            if (!entryAtOpen && (holding < UiRules.MinHoldingDays || holding > UiRules.MaxHoldingDays))
+            int holding = iv.exitDay - iv.entryDay;
+            int minimumHoldingDays = entryAtOpen ? UiRules.StockMinHoldingDays : UiRules.MinHoldingDays;
+            int maximumHoldingDays = entryAtOpen ? UiRules.StockMaxHoldingDays : UiRules.MaxHoldingDays;
+            if (holding < minimumHoldingDays || holding > maximumHoldingDays)
                 return ErrorCodes.InvalidHoldingDays;
 
             return "";
         }
 
-        /// <summary>진입일을 고른 뒤 청산일 선택지(5~10일 뒤, 30일 이하)를 만들 때 사용.</summary>
+        /// <summary>진입일을 고른 뒤 최소 7일 뒤부터 가능한 청산일을 만든다.</summary>
         public static IEnumerable<int> AllowedExitDays(int entryDay)
         {
             for (int d = entryDay + UiRules.MinHoldingDays; d <= entryDay + UiRules.MaxHoldingDays; d++)

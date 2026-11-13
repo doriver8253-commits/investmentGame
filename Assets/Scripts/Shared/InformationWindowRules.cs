@@ -5,7 +5,7 @@ namespace BlackWhale.Shared
 {
     public static class InformationWindowRules
     {
-        public const int Length = 5, MaxStartDay = 26;
+        public const int Length = 5, MinimumGapDays = 4, MaxStartDay = 26;
         public static int?[] KnownDays(VisibleCompany company)
         {
             var values = new int?[31]; values[0] = 0;
@@ -32,5 +32,15 @@ namespace BlackWhale.Shared
         public static bool OverlapsPublic(PublicState state, string company, int start)
             => (state?.publicInformation ?? Array.Empty<PublicInformationChoice>()).Any(c =>
                 c.companyId == company && start < c.startDay + Length && c.startDay < start + Length);
+
+        public static bool TooCloseToPublic(PublicState state, string company, int start)
+            => (state?.publicInformation ?? Array.Empty<PublicInformationChoice>()).Any(c =>
+                c.companyId == company && start < c.startDay + Length + MinimumGapDays
+                    && c.startDay < start + Length + MinimumGapDays);
+
+        public static bool TooCloseToKnown(VisibleCompany company, int start)
+            => (company?.visibleWindows ?? Array.Empty<VisibleInformationWindow>()).Any(w =>
+                start < w.startDay + (w.dailyChangesBps?.Length ?? Length) + MinimumGapDays
+                    && w.startDay < start + Length + MinimumGapDays);
     }
 }

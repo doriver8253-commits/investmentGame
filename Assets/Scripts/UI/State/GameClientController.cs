@@ -260,7 +260,11 @@ namespace BlackWhale.UI.State
             if (s.paused) return Block(ErrorCodes.GamePaused);
             if (s.phase != Protocol.Info) return Block(ErrorCodes.WrongPhase);
             if (endDay == 0) endDay = startDay + 4;
-            if (startDay < 1 || endDay > 30 || endDay < startDay || (s.publicSelectionActive && endDay - startDay != 4)) return Block("INVALID_WINDOW");
+            if (startDay < 1 || endDay > 30 || endDay < startDay || endDay - startDay != 4) return Block(ErrorCodes.InformationWindowNotFiveDays);
+            if (s.publicSelectionActive
+                ? InformationWindowRules.TooCloseToPublic(s, companyId, startDay)
+                : InformationWindowRules.TooCloseToKnown(Store.View?.companies?.FirstOrDefault(c => c.companyId == companyId), startDay))
+                return Block(ErrorCodes.InformationWindowTooClose);
             if (s.publicSelectionActive && s.publicSelectionPlayerId != LocalPlayerId) return Block(ErrorCodes.NotYourTurn);
             string type = s.publicSelectionActive ? CommandTypes.RevealInformationWindow : CommandTypes.BuyInformationWindow;
             if (Store.HasPending(type)) return CommandStatus.AlreadyPending;

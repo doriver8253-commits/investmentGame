@@ -21,5 +21,7 @@ namespace BlackWhale.Shared
         public const string InvalidAbility = "INVALID_ABILITY", AbilityLocked = "ABILITY_LOCKED";
         public const string InvalidBid = "INVALID_BID", BidLocked = "BID_LOCKED";
         public const string InvalidItem = "INVALID_ITEM", NotEnoughAssets = "NOT_ENOUGH_ASSETS";
+        public const string InformationWindowNotFiveDays = "INFORMATION_WINDOW_NOT_FIVE_DAYS";
+        public const string InformationWindowTooClose = "INFORMATION_WINDOW_TOO_CLOSE";
     }
 }

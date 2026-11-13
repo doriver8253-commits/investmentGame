@@ -36,7 +36,9 @@ namespace BlackWhale.Rules
         public bool StockEnabled { get; private set; }
         public static MarketService CreateStockSystem(int seed)
         {
-            var rules = new InvestmentRules { entryAtOpen = true, minHoldingDays = 1, maxHoldingDays = 30, maxIntervalsPerCompany = 0 };
+            // 현재 주식 모드는 진입일과 청산일의 차이가 7일 이상이어야 한다.
+            // 실제 보유 기간 판정은 OrderValidator가 exitDay - entryDay로 수행한다.
+            var rules = new InvestmentRules { entryAtOpen = true, minHoldingDays = 7, maxHoldingDays = 30, maxIntervalsPerCompany = 0 };
             return new MarketService(t => GenerateStockMarket(seed, t), rules) { StockEnabled = true, stockSeed = seed, UsesWindowInformation = true };
         }
         private static uint StockHash(int seed, int turn, uint salt)

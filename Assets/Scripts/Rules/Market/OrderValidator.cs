@@ -39,7 +39,12 @@ namespace BlackWhale.Rules
                 if (p == null || !(rules.minEntryDay <= p.entryDay &&
                     (p.entryDay < p.exitDay || (rules.entryAtOpen && rules.minHoldingDays == 1 && p.entryDay > 0 && p.entryDay == p.exitDay)) && p.exitDay <= rules.maxExitDay))
                     return ErrorCodes.InvalidDay;
-                int holding = p.exitDay - p.entryDay + (rules.entryAtOpen && p.entryDay > 0 ? 1 : 0);
+                // 주식 모드의 보유 기간은 달력 날짜의 차이로 계산한다.
+                // 따라서 1일 진입·7일 청산은 6일로 취급되어 실패하고,
+                // 1일 진입·8일 청산부터 최소 7일 조건을 만족한다.
+                int holding = rules.entryAtOpen && rules.minHoldingDays == 1 && p.entryDay > 0
+                    ? p.exitDay - p.entryDay + 1
+                    : p.exitDay - p.entryDay;
                 if (holding < rules.minHoldingDays || holding > rules.maxHoldingDays) return ErrorCodes.InvalidHoldingDays;
             }
             Interval[] sorted = periods.OrderBy(p => p.entryDay).ToArray();

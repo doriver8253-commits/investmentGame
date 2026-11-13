@@ -55,18 +55,20 @@ namespace BlackWhale.UI.Presentation
             if (day < UiRules.MinDay || day > UiRules.MaxDay) return Reject(ErrorCodes.InvalidDay);
 
             var intervals = Draft.IntervalsOf(companyId);
+            int minimumHoldingDays = Draft.EntryAtOpen ? UiRules.StockMinHoldingDays : UiRules.MinHoldingDays;
+            int maximumHoldingDays = Draft.EntryAtOpen ? UiRules.StockMaxHoldingDays : UiRules.MaxHoldingDays;
             if (!_candidates.TryGetValue(companyId, out var entry))
             {
                 if (intervals.Count >= UiRules.MaxIntervalsPerCompany) return Reject(ErrorCodes.TooManyIntervals);
-                if (day > UiRules.MaxDay - UiRules.MinHoldingDays)
-                    return Reject(ErrorCodes.InvalidHoldingDays, day + "일에 진입하면 30일 안에 5일 이상 보유할 수 없습니다.");
+                if (day > UiRules.MaxDay - minimumHoldingDays)
+                    return Reject(ErrorCodes.InvalidHoldingDays, day + "일에 진입하면 30일 안에 최소 " + minimumHoldingDays + "일을 보유할 수 없습니다.");
                 _candidates[companyId] = day;
                 return new PickResult
                 {
                     Outcome = PickOutcome.CandidateSet,
                     ErrorCode = "",
-                    Message = "진입 " + day + "일 · 청산일을 클릭하세요(" + (day + UiRules.MinHoldingDays) + "~"
-                              + System.Math.Min(day + UiRules.MaxHoldingDays, UiRules.MaxDay) + "일). 우클릭으로 취소"
+                    Message = "진입 " + day + "일 · 청산일을 클릭하세요(" + (day + minimumHoldingDays) + "~"
+                              + System.Math.Min(day + maximumHoldingDays, UiRules.MaxDay) + "일). 우클릭으로 취소"
                 };
             }
 
@@ -108,10 +110,15 @@ namespace BlackWhale.UI.Presentation
             if (companyId != Draft.FirstCompanyId && companyId != Draft.SecondCompanyId) return null;
             var entry = CandidateOf(companyId);
             if (entry.HasValue)
-                return new UnityEngine.Vector2Int(entry.Value + UiRules.MinHoldingDays,
-                    System.Math.Min(entry.Value + UiRules.MaxHoldingDays, UiRules.MaxDay));
+            {
+                int minimumHoldingDays = Draft.EntryAtOpen ? UiRules.StockMinHoldingDays : UiRules.MinHoldingDays;
+                int maximumHoldingDays = Draft.EntryAtOpen ? UiRules.StockMaxHoldingDays : UiRules.MaxHoldingDays;
+                return new UnityEngine.Vector2Int(entry.Value + minimumHoldingDays,
+                    System.Math.Min(entry.Value + maximumHoldingDays, UiRules.MaxDay));
+            }
             if (Draft.IntervalsOf(companyId).Count >= UiRules.MaxIntervalsPerCompany) return null;
-            return new UnityEngine.Vector2Int(UiRules.MinDay, UiRules.MaxDay - UiRules.MinHoldingDays);
+            int min = Draft.EntryAtOpen ? UiRules.StockMinHoldingDays : UiRules.MinHoldingDays;
+            return new UnityEngine.Vector2Int(UiRules.MinDay, UiRules.MaxDay - min);
         }
 
         /// <summary>마우스를 올린 청산일 미리보기가 합법인지(화면 색 표시용).</summary>

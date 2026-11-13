@@ -662,7 +662,7 @@ namespace BlackWhale.UI.View
             var hold = UiKit.Label(row, "", 13, Palette.SubText, TextAnchor.MiddleLeft);
             UiKit.Place(hold.rectTransform, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(330, 0), new Vector2(90, 34));
             _holdLabels.Add(new KeyValuePair<Interval, Text>(iv, hold));
-            UpdateHoldLabel(iv, hold);
+            UpdateHoldLabel(iv, hold, _draft?.EntryAtOpen == true);
 
             var remove = UiKit.Button(row, "삭제", 12, Palette.Card, Palette.SubText, () =>
             {
@@ -711,7 +711,7 @@ namespace BlackWhale.UI.View
             UiKit.SetButton(_submitButton, pending ? "확정 중…" : "주문 확정", can,
                 can ? Palette.Accent : Palette.Disabled, can ? Color.white : Palette.DisabledText);
 
-            foreach (var pair in _holdLabels) UpdateHoldLabel(pair.Key, pair.Value);
+            foreach (var pair in _holdLabels) UpdateHoldLabel(pair.Key, pair.Value, _draft?.EntryAtOpen == true);
             foreach (var pair in _orderCharts) DrawOrderChart(pair.Value, pair.Key);
         }
 
@@ -723,10 +723,12 @@ namespace BlackWhale.UI.View
             _c.Store.TradePlans.SetDraft(investments);
         }
 
-        private static void UpdateHoldLabel(Interval iv, Text hold)
+        private static void UpdateHoldLabel(Interval iv, Text hold, bool entryAtOpen)
         {
             int holding = iv.exitDay - iv.entryDay;
-            bool ok = holding >= UiRules.MinHoldingDays && holding <= UiRules.MaxHoldingDays;
+            int minimum = entryAtOpen ? UiRules.StockMinHoldingDays : UiRules.MinHoldingDays;
+            int maximum = entryAtOpen ? UiRules.StockMaxHoldingDays : UiRules.MaxHoldingDays;
+            bool ok = holding >= minimum && holding <= maximum;
             hold.text = "보유 " + holding + "일";
             hold.color = ok ? Palette.SubText : Palette.Up;
         }

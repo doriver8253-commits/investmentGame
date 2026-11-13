@@ -231,8 +231,8 @@ namespace BlackWhale.UI.View
             if (!_entryDay.HasValue)
             {
                 if (plan.Intervals.Length >= UiRules.MaxIntervalsPerCompany) _note = "최대 2구간입니다. 기존 구간을 삭제한 뒤 다시 선택하세요.";
-                else if (day > UiRules.MaxDay - UiRules.MinHoldingDays) _note = "진입일은 0~25일 중에서 선택하세요.";
-                else { _entryDay = day; _note = day + "일 진입 후보 · 5~10일 뒤의 청산일을 클릭하세요."; }
+                else if (day > UiRules.MaxDay - UiRules.StockMinHoldingDays) _note = "진입일은 0~23일 중에서 선택하세요.";
+                else { _entryDay = day; _note = day + "일 진입 후보 · 최소 7일 뒤의 청산일을 클릭하세요."; }
             }
             else
             {
@@ -420,13 +420,13 @@ namespace BlackWhale.UI.View
             _publicHistory.gameObject.SetActive(windows);
             UiKit.Stretch(_grid, 0, windows ? 76 : 34, 0, 0);
             if (windows) _publicHistory.text = showingResults ? "플레이어 색 띠 = 확정 거래 구간 · 기업별 합산 수익률 표시 · 확대하면 구간별 수익률을 볼 수 있습니다."
-                : (state.publicSelectionActive ? "각자 5일씩 무료 공개 · 겹치지 않게 선택 · " : "새 정보 1일 = 1코인 · 마우스로 선택 후 정보 사기 / 예약하기 · ")
+                : (state.publicSelectionActive ? "각자 5일씩 무료 공개 · 겹치지 않게 선택 · " : "정보는 연속 5일 · 새 정보 1일 = 1코인 · 마우스로 선택 후 정보 사기 / 예약하기 · ")
                 + string.Join(" / ", (state.publicInformation ?? Array.Empty<PublicInformationChoice>()).Select(c =>
                     c.playerId + " " + c.companyId + " " + c.startDay + "~" + (c.startDay + 4) + "일" + (c.automatic ? "(자동)" : "")));
             _header.text = v == null
                 ? "개인 정보 수신 대기"
                 : "보유 코인 <b>" + v.coins + "개</b>   ·   자산 " + DisplayFormat.Money(v.assets)
-                  + (phase == Protocol.Info ? state?.publicSelectionActive == true ? " · " + state.publicSelectionPlayerId + " 공개 차례" : "   ·   1코인 = 1일" : "   ·   구매는 정보 탐색 단계에서만");
+                  + (phase == Protocol.Info ? state?.publicSelectionActive == true ? " · " + state.publicSelectionPlayerId + " 공개 차례" : "   ·   5일 정보마다 최소 4일 공백" : "   ·   구매는 정보 탐색 단계에서만");
             if (state?.stockSystem == true && !showingResults && !state.publicSelectionActive)
                 _publicHistory.text = (phase == Protocol.Investment ? "보유 기업의 차트에서 구간을 예약하세요. 구간을 지정하지 않으면 전체 기간 보유합니다.\n" : "1코인 = 새 날짜 1일 · 정보 할인 " + (v?.portfolio?.informationDiscount ?? 0) + "일 · 매수는 각 7초씩 2회, 차례마다 최대 15주입니다.\n")
                     + string.Join(" / ", (v?.portfolio?.insights ?? Array.Empty<StockInsight>()).Select(i => i.companyId + " 이벤트 성공 가능성 " + DisplayFormat.Percent(i.probabilityBps, false)));

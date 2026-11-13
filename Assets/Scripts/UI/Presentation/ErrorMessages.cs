@@ -11,6 +11,8 @@ namespace BlackWhale.UI.Presentation
             {
                 case "DRAFT_SHARE_LIMIT": return "한 차례에는 새로 매수하는 수량을 합쳐 최대 15주까지 투자할 수 있습니다.";
                 case "INVALID_WINDOW": return "1~30일 안에서 시작일과 끝일을 선택하세요. 공용 공개는 연속 5일입니다.";
+                case ErrorCodes.InformationWindowNotFiveDays: return "정보는 한 번에 연속 5일만 구매할 수 있습니다.";
+                case ErrorCodes.InformationWindowTooClose: return "같은 기업 정보는 연속해서 구매할 수 없습니다. 최소 4일의 공백이 필요합니다.";
                 case "PUBLIC_SELECTION_PENDING": return "4명의 공용 공개를 마친 뒤 개인 탐색을 시작합니다.";
                 case "PUBLIC_SELECTION_COMPLETE": return "공용 공개가 모두 끝났습니다.";
                 case "PUBLIC_WINDOW_OVERLAP": return "이미 공용 공개된 날짜와 겹칩니다. 다른 5일을 선택하세요.";
@@ -28,7 +30,7 @@ namespace BlackWhale.UI.Presentation
                 case ErrorCodes.SelectionComplete: return "이미 기업 두 개를 모두 선택했습니다.";
                 case ErrorCodes.DuplicateCompany: return "이미 선택한 기업입니다.";
                 case ErrorCodes.NotYourTurn: return "지금은 내 차례가 아닙니다.";
-                case ErrorCodes.InvalidHoldingDays: return "보유 기간은 5~10일이어야 합니다.";
+                case ErrorCodes.InvalidHoldingDays: return "청산일과 진입일의 차이는 최소 7일이어야 합니다.";
                 case ErrorCodes.TooManyIntervals: return "기업마다 거래 구간은 최대 2개입니다.";
                 case ErrorCodes.OverlappingIntervals: return "거래 구간이 겹칩니다. 시가 진입에서는 청산한 다음 날부터 다시 진입하세요.";
                 case ErrorCodes.InvalidRatio: return "투자 비율은 5:5, 6:4, 7:3 중 하나여야 합니다.";

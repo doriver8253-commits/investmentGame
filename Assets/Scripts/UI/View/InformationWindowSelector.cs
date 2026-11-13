@@ -51,20 +51,26 @@ namespace BlackWhale.UI.View
             reserve.gameObject.SetActive(true);
             ((RectTransform)reserve.transform).anchorMin = new Vector2(planning ? 0 : .5f, 0);
             ((RectTransform)confirm.transform).anchorMax = new Vector2(.5f, 0);
-            Selection.FixedPublicWindow = state.publicSelectionActive;
+            // 정보 탐색 단계에서는 공용·개인 정보 모두 5일 고정이다.
+            // 투자 계획 단계로 넘어가면 다시 자유롭게 진입·청산 구간을 편집한다.
+            Selection.FixedPublicWindow = state.phase == Protocol.Info;
             string id = companyId();
             var company = controller.Store.View?.companies?.FirstOrDefault(c => c.companyId == id);
             int start = Math.Max(1, StartDay), count = Selection.HasSelection ? InformationWindowRules.NewDays(company, start, EndDay) : 0;
             bool choosing = state.publicSelectionActive, mine = choosing && state.publicSelectionPlayerId == controller.LocalPlayerId;
             int free = Math.Min(count, (controller.Store.View?.ability?.freeInformationCredits ?? 0) + (controller.Store.View?.portfolio?.informationDiscount ?? 0)), cost = count - free;
             bool overlap = choosing && InformationWindowRules.OverlapsPublic(state, id, StartDay);
+            bool tooClose = choosing
+                ? InformationWindowRules.TooCloseToPublic(state, id, StartDay)
+                : InformationWindowRules.TooCloseToKnown(company, StartDay);
             bool pending = controller.Store.HasPending(choosing ? CommandTypes.RevealInformationWindow : CommandTypes.BuyInformationWindow);
             bool active = !state.paused && string.IsNullOrEmpty(controller.Store.EndReason);
-            bool validPublic = StartDay >= 1 && EndDay - StartDay == 4 && !overlap;
+            bool validPublic = StartDay >= 1 && EndDay - StartDay == 4 && !overlap && !tooClose;
+            bool validFiveDayWindow = Selection.HasSelection && EndDay - StartDay == 4;
             bool can = Selection.HasSelection && state.phase == Protocol.Info && active && !pending &&
-                (choosing ? mine && validPublic : count > 0 && cost <= (controller.Store.View?.coins ?? 0));
+                validFiveDayWindow && !tooClose && (choosing ? mine && validPublic : count > 0 && cost <= (controller.Store.View?.coins ?? 0));
             status.text = !Selection.HasSelection ? "차트에서 클릭 또는 드래그로 구간 선택" : StartDay + "~" + EndDay + "일 · 새 " + count + "일 · "
-                + (choosing ? overlap ? "공개 겹침" : mine ? "무료 공개" : "차례 대기" : cost + "코인" + (free > 0 ? " / 무료 " + free + "일" : ""));
+                + (tooClose ? "같은 기업 정보와 공백 필요" : choosing ? overlap ? "공개 겹침" : mine ? "무료 공개" : "차례 대기" : cost + "코인" + (free > 0 ? " / 무료 " + free + "일" : ""));
             if (planning && Selection.HasSelection) status.text = StartDay + "일 시가 → " + EndDay + "일 종가";
             UiKit.SetButton(confirm, pending ? "요청 중…" : choosing ? "공용 공개" : "정보 사기", can,
                 can ? Palette.Accent : Palette.Disabled, can ? Color.white : Palette.DisabledText);

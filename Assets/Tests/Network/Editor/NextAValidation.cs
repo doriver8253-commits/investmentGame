@@ -45,8 +45,9 @@ namespace BlackWhale.Tests
                 while (Room.Snapshot().publicSelectionActive)
                 {
                     var state = Room.Snapshot();
-                    string company = Market.GetCompanyIds().First(id => Enumerable.Range(1, 26).Any(d => !InformationWindowRules.OverlapsPublic(state, id, d)));
-                    int start = Enumerable.Range(1, 26).First(d => !InformationWindowRules.OverlapsPublic(state, company, d));
+                    string company = Market.GetCompanyIds().First(id => Enumerable.Range(1, 26).Any(d =>
+                        !InformationWindowRules.TooCloseToPublic(state, id, d)));
+                    int start = Enumerable.Range(1, 26).First(d => !InformationWindowRules.TooCloseToPublic(state, company, d));
                     Check(Send(int.Parse(state.publicSelectionPlayerId.Substring(1)), "REVEAL_INFORMATION_WINDOW", new CommandPayload { companyId = company, startDay = start }).success,
                         "finish public selections");
                 }
@@ -171,10 +172,10 @@ namespace BlackWhale.Tests
             var plans = controller.Store.TradePlans;
             Check(plans.SetRank("AI", 1) && plans.SetRank("SPACE", 2) && plans.SetRank("SPACE", 1), "ranks can be assigned and swapped");
             Check(plans.Get("AI").Rank == 2 && plans.Get("SPACE").Rank == 1 && plans.Get("SPACE").Favorite, "unique personal priorities");
-            Check(plans.TryAddInterval("AI", 0, 5) == "" && plans.TryAddInterval("AI", 5, 10) == "", "touching valid planned intervals");
-            Check(plans.TryAddInterval("AI", 10, 15) == ErrorCodes.TooManyIntervals && plans.Get("AI").Intervals.Length == 2, "failed extra interval leaves plans unchanged");
-            Check(plans.TryAddInterval("SPACE", 26, 31) != "" && plans.TryAddInterval("SPACE", 10, 15) == "", "day and holding rules enforced before saving");
-            Check(plans.TryAddInterval("SPACE", 14, 20) == ErrorCodes.OverlappingIntervals && plans.Get("SPACE").Intervals.Length == 1, "overlap cannot alter saved plan");
+            Check(plans.TryAddInterval("AI", 0, 7) == "" && plans.TryAddInterval("AI", 8, 15) == "", "seven-day planned intervals require a non-overlapping gap");
+            Check(plans.TryAddInterval("AI", 16, 23) == ErrorCodes.TooManyIntervals && plans.Get("AI").Intervals.Length == 2, "failed extra interval leaves plans unchanged");
+            Check(plans.TryAddInterval("SPACE", 26, 31) != "" && plans.TryAddInterval("SPACE", 10, 17) == "", "day and holding rules enforced before saving");
+            Check(plans.TryAddInterval("SPACE", 14, 21) == ErrorCodes.OverlappingIntervals && plans.Get("SPACE").Intervals.Length == 1, "overlap cannot alter saved plan");
             var copy = plans.Get("AI"); copy.Intervals[0].entryDay = 20;
             Check(plans.Get("AI").Intervals[0].entryDay == 0, "returned plans are independent copies");
             var draft = BlackWhale.UI.Presentation.InvestmentDraft.FromSelections(new[] { "AI", "SPACE" }, plans);
@@ -229,7 +230,7 @@ namespace BlackWhale.Tests
             return new PlayerView { turn = 1, coins = 3, selectedCompanies = new[] { "AI", "BANK" },
                 companies = new[] { "AI", "BANK" }.Select(id => new VisibleCompany { companyId = id,
                     visibleBundles = new[] { new VisibleBundle { bundleIndex = 0, startDay = 1, source = "PUBLIC",
-                        dailyChangesBps = new[] { 0, 0, 0, 0, id == "AI" ? aiExit : bankExit } } } }).ToArray() };
+                        dailyChangesBps = new[] { 0, 0, 0, 0, 0, 0, 0, id == "AI" ? aiExit : bankExit } } } }).ToArray() };
         }
         private static void Strategies()
         {
@@ -256,8 +257,8 @@ namespace BlackWhale.Tests
             }
             var empty = new PlayerView { selectedCompanies = new[] { "AI", "BANK" }, companies = Array.Empty<VisibleCompany>() };
             var fallback = new InformationBotStrategy(2, new BotPolicy(BotDifficulty.Hard)).BuildOrder(empty);
-            Check(fallback.All(i => i.weightBps == 5000 && i.intervals[0].entryDay == 0 && i.intervals[0].exitDay == 5), "unknown endpoints fallback");
-            var days = InformationBotStrategy.KnownDays(a.companies[0]); Check(days[0] == 0 && !days[6].HasValue, "unknown != zero");
+            Check(fallback.All(i => i.weightBps == 5000 && i.intervals[0].entryDay == 0 && i.intervals[0].exitDay == 7), "unknown endpoints fallback");
+            var days = InformationBotStrategy.KnownDays(a.companies[0]); Check(days[0] == 0 && !days[9].HasValue, "unknown != zero");
             a.selectedCompanies = new[] { "AI" }; state.companySeats[1].remainingSeats = 0;
             Check(new InformationBotStrategy(4, new BotPolicy(BotDifficulty.Normal)).SelectCompany(a, state) == null, "capacity and duplicate filtered");
         }
@@ -299,7 +300,7 @@ namespace BlackWhale.Tests
             bot.Update(5); bot.Update(6);
             var order = client.Sent.Last(); Check(order.type == "SUBMIT_INVESTMENT" && client.Sent.Count(c => c.type == order.type) == 1, "one pending order");
             client.Reply(order, false); bot.Update(7); var fallback = client.Sent.Last();
-            Check(fallback.payload.investments.All(i => i.weightBps == 5000 && i.intervals[0].entryDay == 0 && i.intervals[0].exitDay == 5), "rejected order falls back");
+            Check(fallback.payload.investments.All(i => i.weightBps == 5000 && i.intervals[0].entryDay == 0 && i.intervals[0].exitDay == 7), "rejected order falls back");
             client.Reply(fallback, true, new ResultPayload { automatic = true, locked = true, investments = fallback.payload.investments });
             bot.Update(8); Check(client.Sent.Count(c => c.type == "SUBMIT_INVESTMENT") == 2, "automatic lock suppresses further orders");
             bot.Dispose();
