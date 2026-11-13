@@ -71,21 +71,22 @@ namespace BlackWhale.Tests
         private static void Reservations()
         {
             var h = new Harness(); h.Public(); h.Room.DrainMessages();
-            var singles = new[] { 1, 3, 5, 7 }.Select(d => new Interval { entryDay = d, exitDay = d }).ToArray();
-            Check(OrderInputValidator.ValidateIntervals(singles, true) == "", "single-day trades and more than two intervals are valid");
+            var singles = new[] { 1, 9, 17 }.Select(d => new Interval { entryDay = d, exitDay = d + 7 }).ToArray();
+            Check(OrderInputValidator.ValidateIntervals(singles, true) == "", "seven-day trades and more than two intervals are valid");
+            Check(OrderInputValidator.ValidateIntervals(new[] { new Interval { entryDay = 5, exitDay = 5 } }, true) == ErrorCodes.InvalidHoldingDays, "single-day trades are no longer valid");
             Check(OrderInputValidator.ValidateIntervals(new[] { new Interval { entryDay = 0, exitDay = 30 } }, true) == "", "whole turn holding is valid");
             Check(OrderInputValidator.ValidateIntervals(new[] { new Interval { entryDay = 0, exitDay = 0 } }, true) == ErrorCodes.InvalidDay, "zero-day baseline is not a trade");
             var plan = new[] {
                 new Investment { companyId = "AI", weightBps = 6000, intervals = singles },
                 new Investment { companyId = "BANK", weightBps = 4000, intervals = new[] { new Interval { entryDay = 0, exitDay = 30 } } },
-                new Investment { companyId = "BIO", intervals = new[] { new Interval { entryDay = 12, exitDay = 12 } } }
+                new Investment { companyId = "BIO", intervals = new[] { new Interval { entryDay = 12, exitDay = 20 } } }
             };
             var command = new Command { type = "SAVE_TRADE_PLAN", turn = 1, requestId = "reservation", payload = new CommandPayload { investments = plan } };
             Check(h.Room.ProcessCommand("c1", command).success && h.Room.ProcessCommand("c1", command).success, "reservation save and replay");
             plan[0].intervals[0].exitDay = 29;
-            Check(h.Market.GetReservations("P1")[0].intervals[0].exitDay == 1, "server reservation copy is isolated");
+            Check(h.Market.GetReservations("P1")[0].intervals[0].exitDay == 8, "server reservation copy is isolated");
             Check(!h.Market.IsOrderLocked("P1") && h.Market.GetReservations("P2").Length == 0, "saving neither locks nor shares a plan");
-            var invalid = h.Market.GetReservations("P1"); invalid[0].intervals[0].exitDay = 4;
+            var invalid = h.Market.GetReservations("P1"); invalid[0].intervals[0].exitDay = 10;
             Check(h.Send(1, "SAVE_TRADE_PLAN", new CommandPayload { investments = invalid }).errorCode == ErrorCodes.OverlappingIntervals,
                 "overlap is rejected atomically");
             h.Send(1, "GET_PLAYER_VIEW"); h.Send(2, "GET_PLAYER_VIEW");
@@ -99,7 +100,7 @@ namespace BlackWhale.Tests
             Check(remote.Send(2, "SAVE_TRADE_PLAN", new CommandPayload { investments = h.Market.GetReservations("P1") }).success, "remote reservation");
             remote.Room.DrainMessages(); remote.Room.Disconnect("c2");
             Check(remote.Room.Join("c2-return", "ignored", token) == "", "remote reconnect succeeds");
-            Check(remote.Room.DrainMessages().Single(d => d.PlayerId == "P2" && d.Message.type == "PLAYER_VIEW").Message.playerView.reservedInvestments[0].intervals.Length == 4, "reconnect restores own reservations");
+            Check(remote.Room.DrainMessages().Single(d => d.PlayerId == "P2" && d.Message.type == "PLAYER_VIEW").Message.playerView.reservedInvestments[0].intervals.Length == 3, "reconnect restores own reservations");
             // A fresh connected room exercises the complete timeout -> reveal -> settlement path.
             var live = new Harness(); live.Public();
             Check(live.Send(1, "SAVE_TRADE_PLAN", new CommandPayload { investments = h.Market.GetReservations("P1") }).success, "save live plan");
@@ -112,7 +113,7 @@ namespace BlackWhale.Tests
             live.Clock.Seconds = live.Room.Snapshot().phaseEndsAtServerSeconds; live.Room.Tick();
             Check(live.Room.Snapshot().phase == Protocol.Reveal, "deadline reveals without clicking submit");
             var own = live.Market.GetOwnInvestmentState("P1").Investments;
-            Check(own[0].companyId == "AI" && own[0].weightBps == 6000 && own[0].intervals.Length == 4 && own[1].intervals[0].exitDay == 30,
+            Check(own[0].companyId == "AI" && own[0].weightBps == 6000 && own[0].intervals.Length == 3 && own[1].intervals[0].exitDay == 30,
                 "automatic order preserves chosen firms, ratio and every reserved interval");
             Check(own.All(i => i.companyId != "BIO"), "unselected company's reservation is not traded");
             var deliveries = live.Room.DrainMessages();
@@ -130,11 +131,10 @@ namespace BlackWhale.Tests
         private static void DailyEconomy()
         {
             var h = new Harness(); h.Public();
-            Check(h.Buy(1, "BIO", 30, 30).success && h.View(1).coins == 14, "one day costs one coin");
-            Check(h.Buy(1, "BIO", 3, 9).success && h.View(1).coins == 7, "arbitrary seven-day range costs seven coins");
-            Check(h.Buy(1, "BIO", 8, 12).success && h.View(1).coins == 4, "only new overlapping days cost coins");
-            Check(h.Buy(1, "BIO", 13, 29).errorCode == "NOT_ENOUGH_COINS" && h.View(1).coins == 4, "unaffordable range is atomic");
-            Check(h.Buy(1, "BIO", 7, 6).errorCode == "INVALID_WINDOW" && h.Buy(1, "BIO", 30, 31).errorCode == "INVALID_WINDOW", "range boundaries");
+            Check(h.Buy(1, "BIO", 26).success && h.View(1).coins == 10, "five new days cost five coins");
+            Check(h.Buy(1, "BIO", 1).success && h.Buy(1, "BIO", 13).success && h.View(1).coins == 0, "three separated five-day windows use all fifteen coins");
+            Check(h.Buy(1, "AUTO", 10).errorCode == "NOT_ENOUGH_COINS" && h.View(1).coins == 0, "unaffordable window is atomic");
+            Check(h.Buy(1, "BIO", 7, 6).errorCode == "INVALID_WINDOW" && h.Buy(1, "BIO", 27).errorCode == "INVALID_WINDOW", "range boundaries");
             var grant = new Harness(); string[] players = { "P1", "P2", "P3", "P4" };
             for (int turn = 1; turn <= 10; turn++)
             {
@@ -147,7 +147,7 @@ namespace BlackWhale.Tests
         }
         private static void OpenEntry()
         {
-            var h = new Harness(); h.Public(); Check(h.Buy(1, "BIO", 20, 20).success, "buy isolated day");
+            var h = new Harness(); h.Public(); Check(h.Buy(1, "BIO", 20).success, "buy one five-day window");
             var company = h.View(1).companies.Single(c => c.companyId == "BIO");
             var days = h.Market.GetWindow(1, "BIO", 19, 7);
             Check(!InformationWindowRules.KnownDays(company)[19].HasValue && InformationWindowRules.KnownOpens(company)[20] == days[0], "only bought day exposes its open");
@@ -155,8 +155,9 @@ namespace BlackWhale.Tests
             var investment = new Investment { companyId = "BIO", intervals = new[] { new Interval { entryDay = 20, exitDay = 25 } } };
             Check(Settlement.CompanyReturnBps(new MarketBook(data, rules), investment, rules) == days[6] - days[0], "exit close minus entry open");
             Check(h.View(1).entryAtOpen && h.View(2).companies.Single(c => c.companyId == "BIO").visibleWindows.Length == 0, "private opens do not leak to other players");
-            Check(OrderInputValidator.ValidateIntervals(new[] { new Interval { entryDay = 3, exitDay = 7 } }, true) == "", "entry and exit dates count as five holding days");
-            var touching = new[] { new Interval { entryDay = 1, exitDay = 5 }, new Interval { entryDay = 5, exitDay = 9 } };
+            Check(OrderInputValidator.ValidateIntervals(new[] { new Interval { entryDay = 3, exitDay = 10 } }, true) == "", "exit day minus entry day of seven is allowed");
+            Check(OrderInputValidator.ValidateIntervals(new[] { new Interval { entryDay = 3, exitDay = 9 } }, true) == ErrorCodes.InvalidHoldingDays, "six days apart is too short");
+            var touching = new[] { new Interval { entryDay = 1, exitDay = 8 }, new Interval { entryDay = 8, exitDay = 15 } };
             Check(OrderInputValidator.ValidateIntervals(touching, true) == ErrorCodes.OverlappingIntervals, "same-day exit close and re-entry open overlap");
         }
         private static void RangeEditing()
@@ -233,7 +234,10 @@ namespace BlackWhale.Tests
             var request = new Command { type = "REVEAL_INFORMATION_WINDOW", requestId = "public-replay", turn = 1, payload = new CommandPayload { companyId = "AI", startDay = 3 } };
             Check(h.Room.ProcessCommand("c1", request).success && h.Room.ProcessCommand("c1", request).success && h.Room.Snapshot().publicSelectionIndex == 1, "replay publishes once");
             Check(h.Send(2, request.type, new CommandPayload { companyId = "AI", startDay = 7 }).errorCode == "PUBLIC_WINDOW_OVERLAP", "overlap rejected");
-            for (int p = 2; p <= 4; p++) Check(h.Send(p, request.type, new CommandPayload { companyId = "AI", startDay = 3 + 5 * (p - 1) }).success, "same company allowed");
+            Check(h.Send(2, request.type, new CommandPayload { companyId = "AI", startDay = 8 }).errorCode == "INFORMATION_WINDOW_TOO_CLOSE", "public windows of one company keep a four-day gap");
+            Check(h.Send(2, request.type, new CommandPayload { companyId = "AI", startDay = 12 }).success, "same company allowed after the four-day gap");
+            Check(h.Send(3, request.type, new CommandPayload { companyId = "AI", startDay = 21 }).success, "same company allowed after the four-day gap");
+            Check(h.Send(4, request.type, new CommandPayload { companyId = "FOOD", startDay = 1 }).success, "other company allowed");
             Check(!h.Room.Snapshot().publicSelectionActive && h.Room.Snapshot().publicInformation.Length == 4, "four choices completed");
             for (int p = 1; p <= 4; p++) Check(h.View(p).companies.Sum(c => InformationWindowRules.KnownDays(c).Skip(1).Count(v => v.HasValue)) == 20 && h.Info.GetCoins("PATTERNS", "P" + p) == 15, "twenty identical free dates");
         }
@@ -260,15 +264,19 @@ namespace BlackWhale.Tests
             var h = new Harness(); h.Public();
             Check(h.Buy(1, "BIO", 26).success && h.View(1).coins == 10, "26 through 30 costs five coins");
             Check(h.Buy(1, "BIO", 27).errorCode == "INVALID_WINDOW" && h.Buy(1, "BIO", 0).errorCode == "INVALID_WINDOW", "invalid endpoints");
-            var request = new Command { type = "BUY_INFORMATION_WINDOW", requestId = "private-replay", turn = 1, payload = new CommandPayload { companyId = "BIO", startDay = 24, endDay = 28 } };
-            Check(h.Room.ProcessCommand("c1", request).success && h.Room.ProcessCommand("c1", request).success && h.View(1).coins == 8, "partial overlap charges two new days once");
-            request.payload.startDay = 23; Check(h.Room.ProcessCommand("c1", request).errorCode == "REQUEST_ID_CONFLICT", "start date belongs to fingerprint");
-            Check(h.Buy(1, "BIO", 25).errorCode == "ALREADY_VISIBLE" && h.View(1).coins == 8, "union rejects entirely known window");
-            Check(InformationWindowRules.KnownDays(h.View(1).companies.Single(c => c.companyId == "BIO")).Skip(1).Count(d => d.HasValue) == 7, "daily mask union");
+            Check(h.Buy(1, "BIO", 24).errorCode == "INFORMATION_WINDOW_TOO_CLOSE" && h.View(1).coins == 10, "overlapping purchase is rejected without charging");
+            Check(h.Buy(1, "BIO", 18).errorCode == "INFORMATION_WINDOW_TOO_CLOSE" && h.View(1).coins == 10, "a gap shorter than four days is rejected (18~22 then 26~30)");
+            Check(h.Buy(1, "BIO", 1, 3).errorCode == "INFORMATION_WINDOW_NOT_FIVE_DAYS" && h.Buy(1, "BIO", 1, 6).errorCode == "INFORMATION_WINDOW_NOT_FIVE_DAYS", "only five-day windows can be bought");
+            var request = new Command { type = "BUY_INFORMATION_WINDOW", requestId = "private-replay", turn = 1, payload = new CommandPayload { companyId = "BIO", startDay = 17, endDay = 21 } };
+            Check(h.Room.ProcessCommand("c1", request).success && h.Room.ProcessCommand("c1", request).success && h.View(1).coins == 5, "exact four-day gap (17~21 then 26~30) is allowed and charged once");
+            request.payload.startDay = 16; Check(h.Room.ProcessCommand("c1", request).errorCode == "REQUEST_ID_CONFLICT", "start date belongs to fingerprint");
+            Check(h.Buy(1, "BIO", 26).errorCode == "ALREADY_VISIBLE" && h.View(1).coins == 5, "known window is rejected without charging");
+            Check(InformationWindowRules.KnownDays(h.View(1).companies.Single(c => c.companyId == "BIO")).Skip(1).Count(d => d.HasValue) == 10, "daily mask union");
             Check(h.View(2).companies.Single(c => c.companyId == "BIO").visibleWindows.Length == 0, "personal purchases stay private");
             var privateCopy = DtoCopy.Copy(h.View(1)); privateCopy.companies.Single(c => c.companyId == "BIO").visibleWindows[0].dailyChangesBps[0] = int.MaxValue;
             Check(h.View(1).companies.Single(c => c.companyId == "BIO").visibleWindows[0].dailyChangesBps[0] != int.MaxValue, "deep copied windows");
             Check(h.Market.GetWindow(1, "BIO", 26).SequenceEqual(PatternMarketGenerator.Generate(20261108, 1).companies.Single(c => c.companyId == "BIO").dailyChangesBps.Skip(26)), "purchases never modify market");
+            Check(h.Buy(2, "BIO", 22).success, "gap is checked per player: another player's private window does not block");
         }
         private static void Items()
         {
@@ -279,13 +287,14 @@ namespace BlackWhale.Tests
             var view = new PlayerView(); h.Info.PopulateView(new RequestContext("PATTERNS", 1, Protocol.Info, "P1"), view);
             Check(view.ability.freeInformationCredits == 5, "no-op preserves credit");
             Check(h.Buy(1, "BIO", 26).success && h.View(1).coins == 15, "five free day credits consumed on new information only");
-            Check(h.Buy(1, "AI", 3).success && h.Buy(1, "AI", 6).success, "overlapping paid proofs");
+            Check(h.Buy(1, "AI", 3).errorCode == "INFORMATION_WINDOW_TOO_CLOSE", "private window cannot overlap the public window");
+            Check(h.Buy(1, "AI", 10).success && h.Buy(1, "AI", 19).success, "two paid proofs with four-day gaps");
             h.Feature(2, "Inventory", "STEAL");
             Check(h.Send(2, "USE_INFORMATION_ITEM", new CommandPayload { itemId = "STEAL", targetPlayerId = "P1" }).success, "copy paid record");
             h.Feature(3, "Inventory", "DISTORT");
             Check(h.Send(3, "USE_INFORMATION_ITEM", new CommandPayload { itemId = "DISTORT", targetPlayerId = "P1" }).success, "hide record with exclusive dates");
             var known = InformationWindowRules.KnownDays(h.View(1).companies.Single(c => c.companyId == "AI"));
-            Check(known[1].HasValue && known[5].HasValue && known[6].HasValue && known[7].HasValue && !known[8].HasValue, "public and overlapping private proof survives distortion");
+            Check(known[1].HasValue && known[5].HasValue && Enumerable.Range(10, 5).Concat(Enumerable.Range(19, 5)).Count(d => known[d].HasValue) == 5, "public window and the undistorted private proof stay visible");
             h.Clock.Seconds = 10; h.Room.Tick();
             Check(InformationWindowRules.KnownDays(h.View(1).companies.Single(c => c.companyId == "AI"))[10].HasValue, "distortion expires on server clock");
             h.Feature(4, "Inventory", "STEAL");

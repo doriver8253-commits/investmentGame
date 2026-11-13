@@ -81,6 +81,7 @@ namespace BlackWhale.Tests
             run("turn-start-restores-all-stock-supply-and-bank-preserving-assets-and-history", ResetHoldings);
             run("private-analysis-public-portfolio-copy-and-json-integers", Copies);
             run("all-augment-effect-boundaries-information-ledger-and-long-hold-bonuses", Effects);
+            run("server-requires-seven-days-between-entry-and-exit", SevenDayHolding);
             return names.ToArray();
         }
         private static void Draft()
@@ -103,7 +104,7 @@ namespace BlackWhale.Tests
             for (int p = 1; p <= 4; p++) Check(h.Send(p, StockRules.Pass).success, "second round completion");
             Check(h.Room.Snapshot().phase == Protocol.Investment && !h.Trade(4, "AI", 1).success, "eighth completion starts intervals and locks share trading");
             Check(h.Market.ProcessedDay == 0, "prices are not simulated between players");
-            var plan = new[] { new Investment { companyId = "AI", intervals = new[] { new Interval { entryDay = 3, exitDay = 5 } } } };
+            var plan = new[] { new Investment { companyId = "AI", intervals = new[] { new Interval { entryDay = 3, exitDay = 10 } } } };
             Check(h.Send(3, "SAVE_TRADE_PLAN", new CommandPayload { investments = plan }).errorCode == "INVALID_COMPANY", "cannot reserve shares that were not purchased");
             Check(h.Send(1, "SAVE_TRADE_PLAN", new CommandPayload { investments = plan }).success, "owned company intervals saved during the separate investment phase");
             Check(h.Send(1, "SUBMIT_INVESTMENT", new CommandPayload { investments = plan }).success, "share quantities determine allocations without legacy two-company weights");
@@ -166,7 +167,7 @@ namespace BlackWhale.Tests
         {
             var store = new ClientStateStore();
             var previous = new PlayerView { turn = 1, phase = Protocol.Result, recipientPlayerId = "P1",
-                ownInvestments = new[] { new Investment { companyId = "AI", intervals = new[] { new Interval { entryDay = 1, exitDay = 5 } } } } };
+                ownInvestments = new[] { new Investment { companyId = "AI", intervals = new[] { new Interval { entryDay = 1, exitDay = 8 } } } } };
             store.SetPublicState(new PublicState { turn = 1, phase = Protocol.Result, serverElapsedSeconds = 100, phaseEndsAtServerSeconds = 105 });
             store.SetPlayerView(previous);
             store.MarkPhaseCompleted("old-done", 1, Protocol.Result);
@@ -196,7 +197,7 @@ namespace BlackWhale.Tests
         private static void InformationReservations()
         {
             var h = new Harness(); h.Choose(); h.FinishPublic();
-            var plan = new[] { new Investment { companyId = "AI", intervals = new[] { new Interval { entryDay = 3, exitDay = 5 } } } };
+            var plan = new[] { new Investment { companyId = "AI", intervals = new[] { new Interval { entryDay = 3, exitDay = 10 } } } };
             Check(h.Send(1, "SAVE_TRADE_PLAN", new CommandPayload { investments = plan }).success, "information exploration can reserve an unowned firm");
             Check(h.Market.GetPortfolio("P1").usedSlots == 0 && h.Market.GetShareMarket().Single(c => c.companyId == "AI").owners.Sum(o => o.shares + o.reserved) == 0, "reservation drafts never preempt stock supply");
             Check(h.Market.GetReservations("P1").Single().intervals.Single().entryDay == 3, "private reservation persists on the server for reconnect");
@@ -205,7 +206,7 @@ namespace BlackWhale.Tests
             Check(h.Market.GetPortfolio("P1").usedSlots == 10 && h.Room.Snapshot().currentPlayerId == "P2", "purchases survive the deadline without an apply or finish button");
             while (h.Room.Snapshot().phase == Protocol.Selection) h.Deadline();
             h.Deadline();
-            Check(h.Room.Snapshot().phase == Protocol.Reveal && h.Market.GetPortfolio("P1").usedSlots == 0, "saved exploration interval automatically exits at day five");
+            Check(h.Room.Snapshot().phase == Protocol.Reveal && h.Market.GetPortfolio("P1").usedSlots == 0, "saved exploration interval automatically exits at day ten");
         }
         private static void Bank()
         {
@@ -221,19 +222,19 @@ namespace BlackWhale.Tests
             var m = MarketService.CreateStockSystem(19);
             m.BeginTurn(new RequestContext("S", 1, Protocol.Info), Players);
             var ctx = new RequestContext("S", 1, Protocol.Investment, "P1");
-            var range = new Interval { entryDay = 3, exitDay = 5 };
+            var range = new Interval { entryDay = 3, exitDay = 10 };
             Check(m.TradeShares(new RequestContext("S",1,Protocol.Selection,"P1"), new[] { new ShareOrder { companyId="AI",targetShares=10 } }).Success, "reserve supply");
             Check(m.SaveReservations(ctx, new[] { new Investment { companyId = "AI", intervals = new[] { range } } }).Success, "range saved after shares purchased");
             Func<int> bank = () => m.GetShareMarket().Single(c => c.companyId=="BANK").owners[0].shares;
             Check(bank() == 30, "waiting slots earn BANK");
             m.SimulateDay(); m.SimulateDay(); m.SimulateDay();
             Check(bank() == 20, "ten slots enter on day three");
-            m.SimulateDay(); m.SimulateDay();
+            for (int day = 4; day <= 10; day++) m.SimulateDay();
             Check(bank() == 30 && m.GetPortfolio("P1").usedSlots==0, "sale returns supply and deposits");
             m.LockPortfolios();
             var board=m.SettleTurn(new RequestContext("S",1,Protocol.Reveal));
             Func<string,int,decimal> price=(id,d)=>10000m+m.GetWindow(1,id,d,1)[0];
-            decimal mixed=price("BANK",2)/10000m*price("AI",5)/price("AI",2)*price("BANK",30)/price("BANK",5);
+            decimal mixed=price("BANK",2)/10000m*price("AI",10)/price("AI",2)*price("BANK",30)/price("BANK",10);
             decimal expected=10000m*(mixed/3m+price("BANK",30)/10000m*2m/3m);
             Check(Math.Abs(board.rows.Single(v=>v.playerId=="P1").totalAssets-expected)<=1, "actual entry/exit and BANK valuation");
             Check(m.GetWindow(1,"BANK",1,30).All(v=>Math.Abs(v)<=200),"bounded BANK series");
@@ -299,25 +300,25 @@ namespace BlackWhale.Tests
             m.BeginTurn(new RequestContext("B", 1, Protocol.Info), Players);
             var ctx = new RequestContext("B", 1, Protocol.Investment, "P1");
             var bank = new Investment { companyId = "BANK", intervals = new[] {
-                new Interval { entryDay = 3, exitDay = 5 }, new Interval { entryDay = 10, exitDay = 12 } } };
+                new Interval { entryDay = 3, exitDay = 10 }, new Interval { entryDay = 14, exitDay = 21 } } };
             Check(m.SubmitInvestment(ctx, new[] { bank }).Success, "BANK may be reserved without purchasing shares");
             Check(m.GetReservations("P1").Single().intervals.Length == 2, "multiple BANK ranges retained");
             m.GetReservations("P1")[0].intervals[0].entryDay = 1;
             Check(m.GetReservations("P1")[0].intervals[0].entryDay == 3, "BANK reservation copy isolated");
             Check(m.TradeShares(new RequestContext("B", 1, Protocol.Selection, "P3"), new[] { new ShareOrder { companyId = "AI", targetShares = 10 } }).Success, "stock slots reserved alongside BANK");
             Check(m.SubmitInvestment(new RequestContext("B", 1, Protocol.Investment, "P3"), new[] { bank,
-                new Investment { companyId = "AI", intervals = new[] { new Interval { entryDay = 3, exitDay = 5 } } } }).Success, "stock and BANK intervals may overlap for different slots");
+                new Investment { companyId = "AI", intervals = new[] { new Interval { entryDay = 3, exitDay = 10 } } } }).Success, "stock and BANK intervals may overlap for different slots");
             var p4 = new RequestContext("B", 1, Protocol.Investment, "P4");
             Check(!m.SaveReservations(p4, new[] { new Investment { companyId = "BANK", intervals = new[] { new Interval { entryDay = 8, exitDay = 3 } } } }).Success, "invalid BANK interval rejected");
             Check(m.SaveReservations(p4, new[] { bank }).Success && m.SaveReservations(p4, Array.Empty<Investment>()).Success, "removing BANK reservation restores default");
             m.LockPortfolios(); var board = m.SettleTurn(new RequestContext("B", 1, Protocol.Reveal));
             Func<int, decimal> price = d => 10000m + m.GetWindow(1, "BANK", d, 1)[0];
-            decimal expected = 10000m * price(5) / price(2) * price(12) / price(9);
+            decimal expected = 10000m * price(10) / price(2) * price(21) / price(13);
             Check(Math.Abs(board.rows.Single(v => v.playerId == "P1").totalAssets - expected) <= 1, "BANK interest only accrues within reserved intervals");
             Check(board.rows.Single(v => v.playerId == "P2").totalAssets == 10000 + m.GetWindow(1, "BANK", 30, 1)[0], "unconfigured BANK preserves full-period return");
             long nextAssets = board.rows.Single(v => v.playerId == "P1").totalAssets;
-            decimal stockFactor = (10000m + m.GetWindow(1, "AI", 5, 1)[0]) / (10000m + m.GetWindow(1, "AI", 2, 1)[0]);
-            decimal mixed = 10000m * (stockFactor / 3 + price(5) / price(2) * 2 / 3) * price(12) / price(9);
+            decimal stockFactor = (10000m + m.GetWindow(1, "AI", 10, 1)[0]) / (10000m + m.GetWindow(1, "AI", 2, 1)[0]);
+            decimal mixed = 10000m * (stockFactor / 3 + price(10) / price(2) * 2 / 3) * price(21) / price(13);
             Check(Math.Abs(board.rows.Single(v => v.playerId == "P3").totalAssets - mixed) <= 2, "BANK accrues only on idle slots, without double counting stock gains");
             Check(board.rows.Single(v => v.playerId == "P4").totalAssets == board.rows.Single(v => v.playerId == "P2").totalAssets, "deleted BANK reservation restores full-period return");
             m.BeginTurn(new RequestContext("B", 2, Protocol.Info), Players);
@@ -443,8 +444,12 @@ namespace BlackWhale.Tests
             Check(info.BuyWindow(buyContext, "BIO", 20, 24).Payload.paidCoins == 1 && m.InformationDiscount("P3") == 0, "discount replay does not consume twice");
             if (analysis.Length > 0)
             {
-                var w = analysis[0]; var purchased = info.BuyWindow(new RequestContext("E", 2, Protocol.Info, "P1", "analysis-mask"), w.companyId, 1, 5);
-                Check(purchased.Success && purchased.Payload.paidCoins == 2, "analysis proof participates in the paid-information union");
+                var w = analysis[0];
+                // The free augment window (days 1~3) counts like any other known window for the four-day gap rule.
+                var tooClose = info.BuyWindow(new RequestContext("E", 2, Protocol.Info, "P1", "analysis-mask"), w.companyId, 1, 5);
+                Check(tooClose.ErrorCode == "INFORMATION_WINDOW_TOO_CLOSE", "augment proof also keeps the four-day gap");
+                var purchased = info.BuyWindow(new RequestContext("E", 2, Protocol.Info, "P1", "analysis-later"), w.companyId, 20, 24);
+                Check(purchased.Success && purchased.Payload.paidCoins == 5, "a separated window can still be bought after an augment proof");
             }
             var cash = MarketService.CreateStockSystem(1); cash.BeginTurn(new RequestContext("C", 1, Protocol.Info), Players); OwnedAugments(cash, "P1").Add("CASH_INTEREST"); cash.LockPortfolios();
             Check(cash.SettleTurn(new RequestContext("C", 1, Protocol.Reveal)).rows.Single(v => v.playerId == "P1").totalAssets == 10100 + cash.GetWindow(1, "BANK", 30, 1)[0], "cash bonus is capped at one percent of total assets");
@@ -480,6 +485,22 @@ namespace BlackWhale.Tests
             {
                 int raw = diversified.GetWindow(1, v.companyId, 30, 1)[0]; Check(v.returnBps == (raw < 0 ? raw * 80 / 100 : raw), "diversification reduces losses and leaves gains unchanged");
             }
+        }
+
+        private static void SevenDayHolding()
+        {
+            var m = MarketService.CreateStockSystem(23);
+            m.BeginTurn(new RequestContext("H7", 1, Protocol.Info), Players);
+            var ctx = new RequestContext("H7", 1, Protocol.Info, "P1");
+            Func<int, int, RuleResult> save = (entry, exit) => m.SaveReservations(ctx, new[] { new Investment { companyId = "AI",
+                intervals = new[] { new Interval { entryDay = entry, exitDay = exit } } } });
+            Check(save(1, 7).ErrorCode == ErrorCodes.InvalidHoldingDays, "day 1 entry and day 7 exit is only six days apart");
+            Check(save(5, 5).ErrorCode == ErrorCodes.InvalidDay, "same-day trade is rejected");
+            Check(save(1, 8).Success && save(0, 7).Success && save(23, 30).Success, "seven days apart is accepted, including day-zero entry and the last day");
+            Check(m.SaveReservations(ctx, new[] { new Investment { companyId = "AI", intervals = new[] {
+                new Interval { entryDay = 1, exitDay = 8 }, new Interval { entryDay = 9, exitDay = 16 } } } }).Success, "several seven-day intervals are allowed");
+            Check(m.SaveReservations(ctx, new[] { new Investment { companyId = "AI", intervals = new[] {
+                new Interval { entryDay = 1, exitDay = 8 }, new Interval { entryDay = 8, exitDay = 15 } } } }).ErrorCode == ErrorCodes.OverlappingIntervals, "re-entering on the exit day is still rejected");
         }
     }
 }
