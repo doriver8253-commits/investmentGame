@@ -154,7 +154,6 @@ namespace BlackWhale.Rules
                 var plan = plans.FirstOrDefault(i => i.companyId == v.companyId)?.intervals ?? Array.Empty<Interval>();
                 foreach (var slot in p.Slots.Where(x => x.Claim == v.companyId)) slot.Plan = plan;
                 p.Shares[v.companyId] = v.targetShares;
-                if (v.targetShares == 0) p.Streak[v.companyId] = 0;
             }
             p.DraftSharesRemaining -= purchased;
             return new RuleResult();
@@ -215,7 +214,6 @@ namespace BlackWhale.Rules
                     if (slot.Claim != null && slot.Plan.Length > 0 && slot.Plan.Max(i => i.exitDay) == day)
                     {
                         p.Shares[slot.Claim]--;
-                        if (p.Shares[slot.Claim] == 0) p.Streak[slot.Claim] = 0;
                         slot.Claim = null;
                         slot.Plan = Array.Empty<Interval>();
                     }
@@ -267,12 +265,31 @@ namespace BlackWhale.Rules
         private int StockHistoryRate(string player, string company, int requestedTurn) => stockReturns[requestedTurn][player][company];
         private int StockSharesForHistory(string player, string company, int requestedTurn)
             => stockHistory.TryGetValue(requestedTurn, out var snapshot) ? snapshot[player][company] : stockPlayers[player].Shares[company];
+        /// <summary>
+        /// A company counts as invested this turn when at least one share was actually held on
+        /// at least one day. Planned exits before day 30 no longer break the streak.
+        /// </summary>
+        private static bool HeldThisTurn(StockPlayer p, string company) => company != "BANK" && p.DailyQuantity[company].Max() > 0;
+        /// <summary>Consecutive turns including the current one (used by SPACE_PIONEER / LONG_TERM).</summary>
+        private static int StreakIncludingThisTurn(StockPlayer p, string company) => HeldThisTurn(p, company) ? p.Streak[company] + 1 : 0;
+        /// <summary>
+        /// DIVERSIFY: on at least one day, three or more companies were held at the same time
+        /// with three or more shares each (uses daily holdings, not shares left at settlement).
+        /// </summary>
+        private static bool DiversifiedOnSomeDay(StockPlayer p)
+            => Enumerable.Range(1, 30).Any(day => InvestmentRules.CompanyIds.Count(id => id != "BANK" && p.DailyQuantity[id][day] >= 3) >= 3);
+        /// <summary>Called once per settled turn, after the settlement results are computed.</summary>
+        private void AdvanceStockStreaks(string player)
+        {
+            var p = stockPlayers[player];
+            foreach (var company in InvestmentRules.CompanyIds) p.Streak[company] = StreakIncludingThisTurn(p, company);
+        }
         private int StockCompanyRate(string player, string company, int raw)
         {
             var p = stockPlayers[player]; int rate = Math.Max(-10000, raw);
-            if (p.Augments.Contains("DIVERSIFY") && p.Shares.Values.Count(q => q >= 3) >= 3 && rate < 0) rate = rate * 80 / 100;
-            if (p.Augments.Contains("SPACE_PIONEER") && company == "SPACE" && p.Streak[company] + 1 >= 2) rate += 200;
-            if (p.Augments.Contains("LONG_TERM") && p.Streak[company] + 1 >= 3) rate += 200;
+            if (p.Augments.Contains("DIVERSIFY") && DiversifiedOnSomeDay(p) && rate < 0) rate = rate * 80 / 100;
+            if (p.Augments.Contains("SPACE_PIONEER") && company == "SPACE" && StreakIncludingThisTurn(p, company) >= 2) rate += 200;
+            if (p.Augments.Contains("LONG_TERM") && StreakIncludingThisTurn(p, company) >= 3) rate += 200;
             return rate;
         }
         private PlayerSettlement SettleStockPlayer(string player)

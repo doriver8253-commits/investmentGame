@@ -300,9 +300,7 @@ namespace BlackWhale.Rules
 
             foreach (PlayerSettlement r in results)
             {
-                if (StockEnabled)
-                    foreach (var company in InvestmentRules.CompanyIds)
-                        stockPlayers[r.playerId].Streak[company] = stockPlayers[r.playerId].Shares[company] > 0 ? stockPlayers[r.playerId].Streak[company] + 1 : 0;
+                if (StockEnabled) AdvanceStockStreaks(r.playerId);
                 assets[r.playerId] = r.endingAssets;
                 lastTurnReturn[r.playerId] = r.turnReturnBps;
                 bestTurnReturn[r.playerId] = bestTurnReturn.TryGetValue(r.playerId, out var best) ? Math.Max(best, r.turnReturnBps) : r.turnReturnBps;

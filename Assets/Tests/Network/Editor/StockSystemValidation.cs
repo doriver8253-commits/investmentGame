@@ -81,6 +81,7 @@ namespace BlackWhale.Tests
             run("turn-start-restores-all-stock-supply-and-bank-preserving-assets-and-history", ResetHoldings);
             run("private-analysis-public-portfolio-copy-and-json-integers", Copies);
             run("all-augment-effect-boundaries-information-ledger-and-long-hold-bonuses", Effects);
+            run("planned-early-exit-keeps-streak-bonuses-and-diversify-uses-daily-holdings", HoldingAugmentsUseDailyHoldings);
             return names.ToArray();
         }
         private static void Draft()
@@ -480,6 +481,60 @@ namespace BlackWhale.Tests
             {
                 int raw = diversified.GetWindow(1, v.companyId, 30, 1)[0]; Check(v.returnBps == (raw < 0 ? raw * 80 / 100 : raw), "diversification reduces losses and leaves gains unchanged");
             }
+        }
+
+        // B: streak bonuses and DIVERSIFY judge what was actually held during the turn, not what is left on day 30.
+        private static int CompanyRate(MarketService m, int turn, string company)
+            => m.GetSettlementDetail(turn).Single(p => p.playerId == "P1").companyProfits.Single(c => c.companyId == company).returnBps;
+        private static void PlayHeldTurn(MarketService m, int turn, Investment[] plan)
+        {
+            Check(m.TradeShares(new RequestContext("HOLD", turn, Protocol.Selection, "P1"),
+                plan.Select(i => new ShareOrder { companyId = i.companyId, targetShares = i.weightBps }).ToArray()).Success, "buy the planned companies");
+            Check(m.SaveReservations(new RequestContext("HOLD", turn, Protocol.Investment, "P1"),
+                plan.Select(i => new Investment { companyId = i.companyId, intervals = i.intervals }).ToArray()).Success, "save the planned exits");
+            m.LockPortfolios(); m.SettleTurn(new RequestContext("HOLD", turn, Protocol.Reveal));
+        }
+        private static void HoldingAugmentsUseDailyHoldings()
+        {
+            // weightBps is reused here as "shares to buy" to keep the helper short.
+            Func<string, int, int, int, Investment> hold = (id, shares, entry, exit) =>
+                new Investment { companyId = id, weightBps = shares, intervals = new[] { new Interval { entryDay = entry, exitDay = exit } } };
+
+            var bonus = MarketService.CreateStockSystem(77); var plain = MarketService.CreateStockSystem(77);
+            for (int t = 1; t <= 3; t++)
+            {
+                var spaceUntilDayFive = new[] { hold("SPACE", 10, 1, 5) };
+                bonus.BeginTurn(new RequestContext("HOLD", t, Protocol.Info), Players);
+                plain.BeginTurn(new RequestContext("HOLD", t, Protocol.Info), Players);
+                if (t == 1) OwnedAugments(bonus, "P1").AddRange(new[] { "SPACE_PIONEER", "LONG_TERM" });
+                PlayHeldTurn(bonus, t, spaceUntilDayFive);
+                PlayHeldTurn(plain, t, spaceUntilDayFive);
+                Check(bonus.GetPortfolio("P1").holdings.Single(h => h.companyId == "SPACE").shares == 0, "planned exit sells every SPACE share before day 30");
+                Check(bonus.GetPortfolio("P1").holdings.Single(h => h.companyId == "SPACE").consecutiveTurns == t, "early planned exit still counts as an invested turn");
+                int extra = (t >= 2 ? 200 : 0) + (t >= 3 ? 200 : 0);
+                Check(CompanyRate(bonus, t, "SPACE") == CompanyRate(plain, t, "SPACE") + extra, "SPACE +2%p from turn two and long-term +2%p from turn three survive early exits");
+            }
+
+            int seed = Enumerable.Range(1, 200).First(s => {
+                var probe = MarketService.CreateStockSystem(s); probe.BeginTurn(new RequestContext("HOLD", 1, Protocol.Info), Players);
+                return new[] { "AI", "FOOD", "AUTO" }.Count(id => probe.GetWindow(1, id, 5, 1)[0] < 0) >= 2; });
+            Func<bool, Investment[], MarketService> diversifyGame = (owned, plan) => {
+                var m = MarketService.CreateStockSystem(seed); m.BeginTurn(new RequestContext("HOLD", 1, Protocol.Info), Players);
+                if (owned) OwnedAugments(m, "P1").Add("DIVERSIFY");
+                PlayHeldTurn(m, 1, plan); return m; };
+
+            var together = new[] { hold("AI", 3, 1, 5), hold("FOOD", 3, 1, 5), hold("AUTO", 3, 1, 5) };
+            var withAugment = diversifyGame(true, together); var without = diversifyGame(false, together);
+            Check(withAugment.GetPortfolio("P1").usedSlots == 0, "all three companies were sold by planned exits before settlement");
+            foreach (var id in new[] { "AI", "FOOD", "AUTO" })
+            {
+                int raw = CompanyRate(without, 1, id);
+                Check(CompanyRate(withAugment, 1, id) == (raw < 0 ? raw * 80 / 100 : raw), "three companies held together still reduce losses after early exits");
+            }
+            var oneAtATime = new[] { hold("AI", 3, 1, 5), hold("FOOD", 3, 6, 10), hold("AUTO", 3, 11, 15) };
+            withAugment = diversifyGame(true, oneAtATime); without = diversifyGame(false, oneAtATime);
+            foreach (var id in new[] { "AI", "FOOD", "AUTO" })
+                Check(CompanyRate(withAugment, 1, id) == CompanyRate(without, 1, id), "holding companies one after another is not diversification");
         }
     }
 }
