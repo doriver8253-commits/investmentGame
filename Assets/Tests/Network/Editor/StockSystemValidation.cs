@@ -75,6 +75,7 @@ namespace BlackWhale.Tests
             run("information-then-thirty-live-closes-and-market-reveal", Timeline);
             run("private-reservations-live-supply-limits-public-fills", PickBudget);
             run("all-companies-random-public-private-purchase-replay-and-exhaustion", CompanyOnlyPublicPicks);
+            run("information-depth-pricing-and-anonymous-interest-signal", DepthPricingAndInterest);
             run("configured-information-range-and-bank-visibility", ConfigurableLobby);
             run("configured-day-duration-boundaries-pause-and-catch-up", ConfiguredDayTiming);
             run("new-turn-snapshots-clear-old-private-data-and-periodic-state-keeps-deadlines", TurnSnapshots);
@@ -253,7 +254,7 @@ namespace BlackWhale.Tests
         }
         private static void CompanyOnlyPublicPicks()
         {
-            var h = new Harness(lobbyOptions: new LobbySettings { earlyTurnCoins = 40 }); h.Choose();
+            var h = new Harness(lobbyOptions: new LobbySettings { earlyTurnCoins = 60 }); h.Choose();
             var state = h.Room.Snapshot();
             Check(!state.publicSelectionActive, "no player public-pick round remains");
             foreach (var company in InvestmentRules.CompanyIds)
@@ -276,7 +277,9 @@ namespace BlackWhale.Tests
             request.payload.informationDays = 2;
             Check(h.Room.ProcessCommand("c1", request).errorCode == "REQUEST_ID_CONFLICT", "purchase count is fingerprinted");
             Check(h.Send(1, "BUY_INFORMATION_WINDOW", new CommandPayload { companyId = "BANK" }).errorCode == "ALREADY_VISIBLE", "BANK cannot be charged");
+            // Depth pricing: the fourth to sixth AI dates cost 2 coins, later dates 3 coins (3 + 6 + 14 * 3 = 51 for all 20).
             for (int i = 0; i < 17; i++) Check(h.Send(1, "BUY_INFORMATION_WINDOW", new CommandPayload { companyId = "AI" }).success, "every purchase exposes a new date");
+            Check(h.Info.GetCoins("STOCK", "P1") == initial - 51, "deeper purchases in one company cost 1/2/3 coins");
             Check(h.Send(1, "BUY_INFORMATION_WINDOW", new CommandPayload { companyId = "AI" }).errorCode == "ALREADY_VISIBLE", "stop at exhaustion without charging");
             var own = h.Info.BuildPlayerView(new RequestContext("STOCK", 1, Protocol.Info, "P1"), h.Market.GetOwnInvestmentState("P1"));
             var other = h.Info.BuildPlayerView(new RequestContext("STOCK", 1, Protocol.Info, "P2"), h.Market.GetOwnInvestmentState("P2"));
@@ -289,6 +292,37 @@ namespace BlackWhale.Tests
             Check(strategy.NextRandomPurchase(own, new LobbySettings()) == null, "BOT does not buy hidden dates after exhausting the allowed range");
             own.companies.Single(c => c.companyId == "BIO").visibleWindows = Array.Empty<VisibleInformationWindow>();
             Check(strategy.NextRandomPurchase(own, new LobbySettings()).CompanyId == "BIO", "BOT buys only a company with eligible unknown dates");
+        }
+        private static void DepthPricingAndInterest()
+        {
+            Check(Enumerable.Range(0, 8).Select(InformationWindowRules.RandomDayCost).SequenceEqual(new[] { 1, 1, 1, 2, 2, 2, 3, 3 }), "1-3rd date 1 coin, 4-6th 2 coins, then 3 coins");
+            Check(InformationWindowRules.RandomDaysCost(2, 3) == 1 + 2 + 2 && InformationWindowRules.RandomDaysCost(0, 0) == 0, "multi-day cost sums each step");
+            var h = new Harness(); h.Choose();
+            Check(h.Room.Snapshot().informationInterest.All(i => i.purchasedDays == 0) && h.Room.Snapshot().informationInterest.All(i => i.companyId != "BANK")
+                && h.Room.Snapshot().informationInterest.Length == InvestmentRules.CompanyIds.Length - 1, "interest starts at zero for every non-BANK company");
+            int start = h.Info.GetCoins("STOCK", "P1"), start2 = h.Info.GetCoins("STOCK", "P2");
+            for (int i = 0; i < 4; i++) Check(h.Send(1, "BUY_INFORMATION_WINDOW", new CommandPayload { companyId = "AI" }).success, "P1 digs into AI");
+            Check(h.Info.GetCoins("STOCK", "P1") == start - 5, "fourth AI date costs 2 coins");
+            var replay = new Command { type = "BUY_INFORMATION_WINDOW", requestId = "depth-replay", turn = 1, payload = new CommandPayload { companyId = "AI" } };
+            var first = h.Room.ProcessCommand("c1", replay); var again = h.Room.ProcessCommand("c1", replay);
+            Check(first.success && again.success && h.Info.GetCoins("STOCK", "P1") == start - 7, "replayed request is charged once at the depth price");
+            Check(h.Send(1, "BUY_INFORMATION_WINDOW", new CommandPayload { companyId = "FOOD" }).success && h.Info.GetCoins("STOCK", "P1") == start - 8, "another company starts again at 1 coin");
+            Check(h.Send(2, "BUY_INFORMATION_WINDOW", new CommandPayload { companyId = "AI" }).success && h.Info.GetCoins("STOCK", "P2") == start2 - 1, "each player's depth price is separate");
+            var state = h.Room.Snapshot();
+            Check(InformationWindowRules.Interest(state, "AI") == 6 && InformationWindowRules.Interest(state, "FOOD") == 1 && InformationWindowRules.Interest(state, "BIO") == 0, "interest is the anonymous total of bought dates");
+            Check(typeof(CompanyInterest).GetFields().Select(f => f.Name).OrderBy(n => n).SequenceEqual(new[] { "companyId", "purchasedDays" }), "interest carries no buyer identity");
+            var view = h.Info.BuildPlayerView(new RequestContext("STOCK", 1, Protocol.Info, "P1"), h.Market.GetOwnInvestmentState("P1"));
+            var ai = view.companies.Single(c => c.companyId == "AI");
+            Check(InformationWindowRules.PurchasedDays(ai) == 5 && InformationWindowRules.NextRandomDayCost(ai) == 2, "client shows the next AI price from its own purchases");
+            Check(ai.visibleWindows.Where(w => w.source == "PURCHASED").Sum(w => w.paidCoins) == 7, "each record keeps the coins it really cost");
+            // Spend down to 1 coin: the bot must not pick a company whose next date costs more than it has.
+            var poor = h.Info.BuildPlayerView(new RequestContext("STOCK", 1, Protocol.Info, "P1"), h.Market.GetOwnInvestmentState("P1"));
+            poor.coins = 1;
+            foreach (var c in poor.companies.Where(c => c.companyId != "AI" && c.companyId != "BANK"))
+                c.visibleWindows = new[] { new VisibleInformationWindow { startDay = 1, dailyChangesBps = new int[25] } };
+            var strategy = new BlackWhale.Bots.InformationBotStrategy(3, new BlackWhale.Bots.BotPolicy(BlackWhale.Bots.BotDifficulty.Hard));
+            Check(strategy.NextRandomPurchase(poor, new LobbySettings()) == null, "BOT skips a company it cannot afford at depth price");
+            Check(h.Send(1, "BUY_INFORMATION_WINDOW", new CommandPayload { companyId = "AI" }).success && h.Info.GetCoins("STOCK", "P1") == start - 10, "a player with coins can still go deeper");
         }
         private static void Bank()
         {

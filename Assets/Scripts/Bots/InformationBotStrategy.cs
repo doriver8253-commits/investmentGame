@@ -52,7 +52,8 @@ namespace BlackWhale.Bots
             int first = Math.Max(1, options.informationStartDay);
             var candidates = (view.companies ?? Array.Empty<VisibleCompany>()).Where(c => c.companyId != "BANK")
                 .Select(c => new { Company = c.companyId, Unknown = Enumerable.Range(first, Math.Max(0, options.informationEndDay - first + 1))
-                    .Count(day => !InformationWindowRules.KnownDays(c)[day].HasValue) }).Where(c => c.Unknown > 0).ToArray();
+                    .Count(day => !InformationWindowRules.KnownDays(c)[day].HasValue) })
+                .Where(c => c.Unknown > 0 && InformationWindowRules.NextRandomDayCost(view.companies.First(v => v.companyId == c.Company)) <= view.coins).ToArray();
             if (candidates.Length == 0) return null;
             var choices = Policy.Difficulty == BotDifficulty.Hard ? candidates.Where(c => c.Unknown == candidates.Max(v => v.Unknown)).ToArray() : candidates;
             return new InformationPurchase { CompanyId = choices[random.Next(choices.Length)].Company };

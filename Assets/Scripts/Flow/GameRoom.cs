@@ -713,6 +713,7 @@ namespace BlackWhale.Flow
                 publicSelectionPlayerId = PublicPicking ? order[publicPickIndex] : "",
                 publicSelectionDeadlineAtServerSeconds = PublicPicking && TimedPhase ? publicPickEnd : 0,
                 publicInformation = WindowMode && turn > 0 ? WindowInfo.GetPublicInformation(Context()) : new PublicInformationChoice[0],
+                informationInterest = StockMode && WindowMode && turn > 0 ? WindowInfo.GetInformationInterest(Context()) : new CompanyInterest[0],
                 players = members.OrderBy(m => m.Id, StringComparer.Ordinal).Select(m => new Player { playerId = m.Id, displayName = m.Name,
                     connected = m.Connection != null, ready = m.Ready, isBot = m.IsBot,
                     augments = StockMode && turn > 0 ? Stock.GetPortfolio(m.Id).augments : Array.Empty<string>() }).ToArray(),

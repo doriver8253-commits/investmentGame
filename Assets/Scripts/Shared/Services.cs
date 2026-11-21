@@ -94,6 +94,7 @@ namespace BlackWhale.Shared
         RuleResult BuyWindow(RequestContext context, string companyId, int startDay, int endDay = 0);
         RuleResult UseInformationItem(RequestContext context, string itemId, string companyId, int startDay, string targetPlayerId, double now);
         PublicInformationChoice[] GetPublicInformation(RequestContext context);
+        CompanyInterest[] GetInformationInterest(RequestContext context);
         bool ExpireDistortions(RequestContext context, double now);
     }
     public interface IMarketHistory

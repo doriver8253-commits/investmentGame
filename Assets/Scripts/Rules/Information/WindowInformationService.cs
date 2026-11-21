@@ -80,17 +80,19 @@ namespace BlackWhale.Rules.Information
                 var mask = Mask(Windows(c), c.PlayerId, company);
                 var available = Enumerable.Range(first, Math.Max(0, options.informationEndDay - first + 1)).Where(day => !mask[day]).ToArray();
                 if (available.Length < count) return new RuleResult(available.Length == 0 ? "ALREADY_VISIBLE" : "NOT_ENOUGH_INFORMATION_DAYS");
-                if (rooms[c.RoomId].Service.GetCoins(c.PlayerId) < count) return new RuleResult("NOT_ENOUGH_COINS");
+                int bought = PurchasedDays(Windows(c), c.PlayerId, company);
+                int cost = InformationWindowRules.RandomDaysCost(bought, count);
+                if (rooms[c.RoomId].Service.GetCoins(c.PlayerId) < cost) return new RuleResult("NOT_ENOUGH_COINS");
                 var days = DrawInformationDays(available, count);
                 foreach (int day in days) ((IWindowMarketDataSource)source).GetWindow(c.Turn, company, day, 1);
-                if (!rooms[c.RoomId].Service.SpendWindowCoins(c.PlayerId, c.Turn, count)) return new RuleResult("NOT_ENOUGH_COINS");
+                if (!rooms[c.RoomId].Service.SpendWindowCoins(c.PlayerId, c.Turn, cost)) return new RuleResult("NOT_ENOUGH_COINS");
                 WindowRecord firstRecord = null;
                 foreach (int day in days)
                 {
-                    var record = AddWindow(c, company, day, "PURCHASED", 1, length: 1);
+                    var record = AddWindow(c, company, day, "PURCHASED", InformationWindowRules.RandomDayCost(bought++), length: 1);
                     if (firstRecord == null) firstRecord = record;
                 }
-                var result = WindowResult(c, firstRecord); result.Payload.paidCoins = count;
+                var result = WindowResult(c, firstRecord); result.Payload.paidCoins = cost;
                 return result;
             });
         }
@@ -209,6 +211,17 @@ namespace BlackWhale.Rules.Information
                 if (stockFree > 0) stock.ConsumeInformationDiscount(c.PlayerId, stockFree);
                 return WindowResult(c, AddWindow(c, company, start, cost == 0 ? "ABILITY" : "PURCHASED", cost, length: length));
             });
+        }
+        private static int PurchasedDays(WindowTurn state, string player, string company)
+            => state.Records.Where(r => r.Player == player && r.Company == company && r.Source == "PURCHASED").Sum(r => r.Length);
+        public CompanyInterest[] GetInformationInterest(RequestContext c)
+        {
+            lock (gate)
+            {
+                var records = Windows(c).Records;
+                return source.GetCompanyIds().Where(id => id != "BANK").Select(id => new CompanyInterest { companyId = id,
+                    purchasedDays = records.Where(r => r.Company == id && r.Source == "PURCHASED").Sum(r => r.Length) }).ToArray();
+            }
         }
         public PublicInformationChoice[] GetPublicInformation(RequestContext c)
         {

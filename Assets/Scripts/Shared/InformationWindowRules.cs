@@ -6,6 +6,20 @@ namespace BlackWhale.Shared
     public static class InformationWindowRules
     {
         public const int Length = 5, MaxStartDay = 26;
+        // 한 턴에 같은 기업을 깊게 팔수록 비싸진다: 1~3번째 1코인, 4~6번째 2코인, 7번째부터 3코인.
+        // 여러 기업을 넓게 볼지, 한 기업 패턴을 깊게 확인할지 고르게 만든다.
+        public const int CheapDays = 3, MiddleDays = 6;
+        public static int RandomDayCost(int alreadyPurchased) => alreadyPurchased < CheapDays ? 1 : alreadyPurchased < MiddleDays ? 2 : 3;
+        public static int RandomDaysCost(int alreadyPurchased, int count)
+            => Enumerable.Range(Math.Max(0, alreadyPurchased), Math.Max(0, count)).Sum(RandomDayCost);
+        /// <summary>이번 턴 이 기업에서 내가 코인으로 산 날짜 수(공용·증강 정보 제외).</summary>
+        public static int PurchasedDays(VisibleCompany company)
+            => (company?.visibleWindows ?? Array.Empty<VisibleInformationWindow>())
+                .Where(w => w?.source == "PURCHASED").Sum(w => w.dailyChangesBps?.Length ?? 0);
+        public static int NextRandomDayCost(VisibleCompany company) => RandomDayCost(PurchasedDays(company));
+        /// <summary>정보 탐색 중 전체 플레이어가 이 기업에 산 날짜 수(익명 합계). 없으면 0.</summary>
+        public static int Interest(PublicState state, string company)
+            => (state?.informationInterest ?? Array.Empty<CompanyInterest>()).FirstOrDefault(i => i?.companyId == company)?.purchasedDays ?? 0;
         public static int[] PublicDays(PublicInformationChoice choice) => choice.days ?? Enumerable.Range(choice.startDay, Length).ToArray();
         public static string PublicChoiceLabel(PublicInformationChoice choice)
         {

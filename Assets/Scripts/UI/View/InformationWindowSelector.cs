@@ -79,9 +79,11 @@ namespace BlackWhale.UI.View
                 bool activeRandom = !state.paused && string.IsNullOrEmpty(controller.Store.EndReason);
                 // 요청 중(pending)이라고 버튼을 회색 '요청 중…'으로 바꿨다가 응답이 오면 되돌리면, 서버 응답이 빨라
                 // 누를 때마다 파랑→회색→파랑으로 깜빡인다. 겉모습은 그대로 두고, 중복 요청은 BuyRandomInformation이 막는다.
-                bool canRandom = id != "BANK" && state.phase == Protocol.Info && activeRandom && remaining > 0 && (controller.Store.View?.coins ?? 0) > 0;
-                status.text = id == "BANK" ? "BANK 0~30일 전체 공개" : $"{first}~{options.informationEndDay}일 중 미공개 {remaining}일 · 날짜는 무작위";
-                SetButtonStable(confirm, id == "BANK" ? "전체 공개" : "랜덤 1일 · 1코인", canRandom,
+                int price = InformationWindowRules.NextRandomDayCost(company);
+                bool canRandom = id != "BANK" && state.phase == Protocol.Info && activeRandom && remaining > 0 && (controller.Store.View?.coins ?? 0) >= price;
+                int interest = InformationWindowRules.Interest(state, id);
+                status.text = id == "BANK" ? "BANK 0~30일 전체 공개" : $"{first}~{options.informationEndDay}일 중 미공개 {remaining}일 · 무작위 · 이번 턴 전체 구매 {interest}일";
+                SetButtonStable(confirm, id == "BANK" ? "전체 공개" : "랜덤 1일 · " + price + "코인", canRandom,
                     canRandom ? Palette.Accent : Palette.Disabled, canRandom ? Color.white : Palette.DisabledText);
                 bool existingRandom = Selection.SelectedIndex >= 0;
                 bool canReserveRandom = activeRandom && Selection.HasSelection && (existingRandom ? CanCancel?.Invoke() == true : CanReserve?.Invoke() == true);

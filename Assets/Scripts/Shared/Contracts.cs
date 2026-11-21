@@ -115,7 +115,10 @@ namespace BlackWhale.Shared
         public string[] draftOrder;
         public CompanyShareState[] shareMarket;
         public LobbySettings lobbySettings;
+        // 이번 턴 기업별로 모든 플레이어가 코인으로 산 정보 날짜 수의 익명 합계. 누가 샀는지는 넣지 않는다.
+        public CompanyInterest[] informationInterest;
     }
+    [Serializable] public sealed class CompanyInterest { public string companyId; public int purchasedDays; }
     [Serializable] public sealed class VisibleBundle
     {
         public int bundleIndex, startDay;

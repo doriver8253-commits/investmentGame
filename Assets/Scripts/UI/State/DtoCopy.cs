@@ -86,6 +86,7 @@ namespace BlackWhale.UI.State
                 publicInformation = s.publicInformation?.Select(c => new PublicInformationChoice { playerId = c.playerId,
                     companyId = c.companyId, startDay = c.startDay, automatic = c.automatic, days = (int[])c.days?.Clone() }).ToArray(),
                 stockSystem = s.stockSystem, totalTurns = s.totalTurns, draftOrder = (string[])s.draftOrder?.Clone(),
+                informationInterest = s.informationInterest?.Select(i => new CompanyInterest { companyId = i.companyId, purchasedDays = i.purchasedDays }).ToArray(),
                 shareMarket = s.shareMarket?.Select(c => new CompanyShareState { companyId = c.companyId, totalShares = c.totalShares, fills = c.fills?.ToArray(),
                     owners = c.owners?.Select(p => new ShareOwner { playerId = p.playerId, shares = p.shares, reserved = p.reserved }).ToArray() }).ToArray()
             };
