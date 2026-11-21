@@ -492,13 +492,13 @@ namespace BlackWhale.UI.View
             _header.text = v == null
                 ? "개인 정보 수신 대기"
                 : "보유 코인 <b>" + v.coins + "개</b>   ·   자산 " + DisplayFormat.Money(v.assets)
-                  + (phase == Protocol.Info ? state?.publicSelectionActive == true ? " · " + state.publicSelectionPlayerId + " 공개 차례" : state?.stockSystem == true ? "   ·   같은 기업 1~3일 1코인 · 4~6일 2코인 · 7일~ 3코인" : "   ·   1코인 = 1일"
+                  + (phase == Protocol.Info ? state?.publicSelectionActive == true ? " · " + state.publicSelectionPlayerId + " 공개 차례" : "   ·   1코인 = 1일"
                      : state?.stockSystem == true ? "" : "   ·   구매는 정보 탐색 단계에서만");
             if (state?.stockSystem == true && !showingResults && !state.publicSelectionActive)
                 _publicHistory.text = (phase == Protocol.Investment ? state.developerMode && !state.developerTimerRunning
                     ? "방장 확인 버튼으로 하루씩 진행합니다. 현재 " + StockRules.CurrentDay(state, v?.portfolio) + "일차\n"
                     : (state.lobbySettings?.daySeconds ?? StockRules.DaySeconds) + "초마다 하루가 공개됩니다. 현재 " + StockRules.CurrentDay(state, v?.portfolio) + "일차\n"
-                    : "BANK 전체 공개 · 각 기업 랜덤 " + (state.lobbySettings?.publicRevealDays ?? 5) + "일 공동 공개 · 코인으로 미공개 랜덤 1일 구매(같은 기업을 많이 살수록 비싸짐) · 드래그는 거래 구간 예약\n")
+                    : "BANK 전체 공개 · 각 기업 랜덤 " + (state.lobbySettings?.publicRevealDays ?? 5) + "일 공동 공개 · 미공개 랜덤 1일 구매: 같은 기업 1~3일째 1코인 · 4~6일째 2코인 · 7일째부터 3코인 · 드래그는 거래 구간 예약\n")
                     + string.Join(" / ", (v?.portfolio?.insights ?? Array.Empty<StockInsight>()).Select(i => i.companyId + " 이벤트 성공 가능성 " + DisplayFormat.Percent(i.probabilityBps, false)));
             foreach (var card in _cards) card.Refresh();
             if (_zoomCompany != null)
