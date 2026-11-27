@@ -40,7 +40,7 @@ namespace BlackWhale.UI.View
         public static void Intro(RectTransform screen, string target, string hunter, int bonusPercent)
         {
             if (screen == null) return;
-            var root = Overlay(screen, "SwapIntro", 7f);
+            var root = Overlay(screen, "SwapIntro", (float)SwapRules.IntroSeconds);
             var top = UiKit.Panel(root, "TopLine", Red); UiKit.Place(top.rectTransform, new Vector2(.5f, .5f), new Vector2(.5f, .5f), new Vector2(0, 175), new Vector2(760, 3));
             var bottom = UiKit.Panel(root, "BottomLine", Red); UiKit.Place(bottom.rectTransform, new Vector2(.5f, .5f), new Vector2(.5f, .5f), new Vector2(0, -175), new Vector2(760, 3));
             var title = Line(root, "<color=" + RedHex + ">교환 턴</color>", 72, 115, 100, FontStyle.Bold);

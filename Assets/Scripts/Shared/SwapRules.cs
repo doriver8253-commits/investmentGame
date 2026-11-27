@@ -61,6 +61,8 @@ namespace BlackWhale.Shared
         /// <summary>견제왕 보너스 금액: 내 턴 시작 자산 × (조종한 계좌 하락률 × BonusPercent%).</summary>
         public static long Bonus(long ownStartingAssets, int accountReturnBps)
             => accountReturnBps >= 0 || ownStartingAssets <= 0 ? 0 : ownStartingAssets * (-(long)accountReturnBps) * BonusPercent / 100 / 10000;
+        /// <summary>교환 턴 시작 안내 카드가 떠 있는 시간(초). 그만큼 정보 탐색 시간을 더 준다.</summary>
+        public const double IntroSeconds = 7;
         /// <summary>교환 턴 정산(견제왕 발표) 단계 길이(초).</summary>
         public const double ResultSeconds = 16;
     }

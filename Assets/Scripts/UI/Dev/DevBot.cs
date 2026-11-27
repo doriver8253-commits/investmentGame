@@ -96,19 +96,10 @@ namespace BlackWhale.UI.Dev
                 if (controller.Store.HasPending(StockRules.Position)) return;
                 foreach (var id in strategy.RankStockCompanies(view, s))
                 {
-                    var supply = s.shareMarket.First(c => c.companyId == holding.companyId);
-                    var company = view.companies.First(c => c.companyId == holding.companyId);
-                    var days = InformationWindowRules.KnownDays(company);
-                    int day = view.portfolio.processedDay;
-                    int? next = days.Skip(day + 1).FirstOrDefault(v => v.HasValue);
-                    int max = holding.activeShares + view.portfolio.AvailableToBuy(supply);
-                    int target = next.HasValue && next < days[day] ? 0 : max;
-                    if (s.swapTurn)
-                    {
-                        // [실험] 교환 턴: 조종 중인 남의 계좌를 떨어뜨리는 게 목표. 내릴 것 같은 기업만 꽉 채우고 BANK는 비운다.
-                        bool falling = next.HasValue ? next < days[day] : day >= 1 && days[day].HasValue && days[day - 1].HasValue && days[day] < days[day - 1];
-                        target = holding.companyId != "BANK" && falling ? max : 0;
-                    }
+                    var holding = view.portfolio.holdings.FirstOrDefault(h => h.companyId == id);
+                    if (holding == null) continue;
+                    // 교환 턴에는 StockTarget이 '내릴 것 같은 기업'을 고르도록 알아서 뒤집는다.
+                    int target = strategy.StockTarget(view, s, id, now);
                     if (holding.activeShares == target) continue;
                     controller.SetStockPosition(id, target); break;
                 }

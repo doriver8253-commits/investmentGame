@@ -57,12 +57,12 @@ namespace BlackWhale.Rules
             if (startDay < 0 || length < 1 || startDay > 30 || length > 31 - startDay) throw new ArgumentOutOfRangeException(nameof(startDay));
             if (!markets.TryGetValue(requestedTurn, out var book) || !book.HasCompany(companyId))
                 throw new ArgumentException("Unknown market or company.");
-            return Enumerable.Range(startDay, length).Select(d => book.ChangeBps(companyId, d)).ToArray();
+            return Enumerable.Range(startDay, length).Select(d => KnownBps(requestedTurn, companyId, d)).ToArray();
         }
         public int[] GetOpenWindow(int requestedTurn, string companyId, int startDay, int length = 5)
         {
             GetWindow(requestedTurn, companyId, startDay, length); // validate the same range
-            return Enumerable.Range(startDay, length).Select(d => markets[requestedTurn].ChangeBps(companyId, Math.Max(0, d - 1))).ToArray();
+            return Enumerable.Range(startDay, length).Select(d => KnownBps(requestedTurn, companyId, Math.Max(0, d - 1))).ToArray();
         }
 
         /// <summary>Provider mode: one market per turn, e.g. <see cref="RandomMarketGenerator.ForTurn"/>.</summary>
@@ -297,7 +297,7 @@ namespace BlackWhale.Rules
             // Compute everything first, then apply, so a failure never leaves half-updated assets.
             PlayerSettlement[] results = players.Select(id =>
                 StockEnabled ? SettleStockPlayer(id) : Settlement.SettlePlayer(id, turnStartAssets[id], costs[id], orders[id], market, rules)).ToArray();
-            if (StockEnabled) ApplySwapBonus(results);
+            if (StockEnabled) { ApplySwapBonus(results); ApplyMissionBonus(results); }
 
             foreach (PlayerSettlement r in results)
             {
@@ -379,7 +379,8 @@ namespace BlackWhale.Rules
                     cumulativeProfit = assets[r.Key] - rules.initialAssets,
                     cumulativeReturnBps = Settlement.ReturnBps(rules.initialAssets, assets[r.Key]),
                     returnHistory = history[r.Key].Select(h => new ReturnPoint { turn = h.turn, returnBps = h.returnBps }).ToArray(),
-                    swapAccountId = SwapAccountOf(r.Key), swapAccountProfit = SwapProfitOf(r.Key), swapBonus = SwapBonusOf(r.Key), swapAccountReturnBps = SwapReturnOf(r.Key)
+                    swapAccountId = SwapAccountOf(r.Key), swapAccountProfit = SwapProfitOf(r.Key), swapBonus = SwapBonusOf(r.Key), swapAccountReturnBps = SwapReturnOf(r.Key),
+                    missionBonus = MissionBonusOf(r.Key)
                 }).ToArray()
             };
         }
@@ -394,7 +395,8 @@ namespace BlackWhale.Rules
                     totalAssets = r.totalAssets, turnReturnBps = r.turnReturnBps, cumulativeProfit = r.cumulativeProfit,
                     cumulativeReturnBps = r.cumulativeReturnBps,
                     returnHistory = r.returnHistory.Select(h => new ReturnPoint { turn = h.turn, returnBps = h.returnBps }).ToArray(),
-                    swapAccountId = r.swapAccountId, swapAccountProfit = r.swapAccountProfit, swapBonus = r.swapBonus, swapAccountReturnBps = r.swapAccountReturnBps
+                    swapAccountId = r.swapAccountId, swapAccountProfit = r.swapAccountProfit, swapBonus = r.swapBonus, swapAccountReturnBps = r.swapAccountReturnBps,
+                    missionBonus = r.missionBonus
                 }).ToArray() };
         }
 

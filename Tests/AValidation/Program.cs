@@ -32,6 +32,11 @@ internal static class Program
                 foreach (string check in SwapValidation.Run()) Console.WriteLine("PASS " + check);
                 return 0;
             }
+            if (args.Contains("--news-only"))
+            {
+                foreach (string check in NewsValidation.Run()) Console.WriteLine("PASS " + check);
+                return 0;
+            }
             if (args.Contains("--patterns-only"))
             {
                 foreach (string check in StockPatternValidation.Run().Concat(StockSystemValidation.Run())) Console.WriteLine("PASS " + check);
@@ -45,7 +50,7 @@ internal static class Program
             string[] realBC = await RealInformationValidation.Run(suite, codec);
             string[] nextA = await NextAValidation.Run(codec);
             string[] stock = StockPatternValidation.Run();
-            stock = stock.Concat(StockSystemValidation.Run()).Concat(SwapValidation.Run()).ToArray();
+            stock = stock.Concat(StockSystemValidation.Run()).Concat(SwapValidation.Run()).Concat(NewsValidation.Run()).ToArray();
             foreach (string check in core.Concat(network).Concat(realBC)) Console.WriteLine("PASS " + check);
             foreach (string check in nextA) Console.WriteLine("PASS " + check);
             foreach (string check in stock) Console.WriteLine("PASS " + check);

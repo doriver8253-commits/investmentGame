@@ -120,8 +120,10 @@ namespace BlackWhale.Bots
                 double urgency = gain > 0 ? 350 * Math.Max(0, occupied + Noise(Policy.CompetitionNoise)) : 0;
                 double hiddenBias = day >= 25 ? (Policy.Personality == BotPersonality.Adventurous ? 700
                     : Policy.Personality == BotPersonality.Stable && id != "FOOD" && id != "AUTO" ? -1400 : 0) : 0;
-                decision = new StockDecision { Buy = gain + Preference(id) + hiddenBias + urgency + Noise(Policy.PredictionNoise) > 0,
-                    ReadyAt = now + NextReactionSeconds() };
+                bool buy = gain + Preference(id) + hiddenBias + urgency + Noise(Policy.PredictionNoise) > 0;
+                // 교환 턴: 남의 계좌를 운용하므로 내릴 것 같은 기업을 사고 BANK는 비운다.
+                if (state.swapTurn) buy = id != "BANK" && gain + Noise(Policy.PredictionNoise) < 0;
+                decision = new StockDecision { Buy = buy, ReadyAt = now + NextReactionSeconds() };
                 stockDecisions.Add(key, decision);
             }
             if (now < decision.ReadyAt) return holding.activeShares;

@@ -89,7 +89,11 @@ namespace BlackWhale.UI.State
                 shareMarket = s.shareMarket?.Select(c => new CompanyShareState { companyId = c.companyId, totalShares = c.totalShares, fills = c.fills?.ToArray(),
                     owners = c.owners?.Select(p => new ShareOwner { playerId = p.playerId, shares = p.shares, reserved = p.reserved }).ToArray() }).ToArray(),
                 swapTurn = s.swapTurn, swapControllerIds = (string[])s.swapControllerIds?.Clone(), swapAccountIds = (string[])s.swapAccountIds?.Clone(),
-                swapTurns = (int[])s.swapTurns?.Clone(), swapBonusPercent = s.swapBonusPercent
+                swapTurns = (int[])s.swapTurns?.Clone(), swapBonusPercent = s.swapBonusPercent,
+                news = s.news?.Select(n => n == null ? null : new MarketNews { day = n.day, eventDay = n.eventDay, companyId = n.companyId, kind = n.kind,
+                    text = n.text, direction = n.direction, moveBps = n.moveBps, accuracyPercent = n.accuracyPercent }).ToArray(),
+                mission = s.mission == null ? null : new TurnMission { id = s.mission.id, companyId = s.mission.companyId,
+                    title = s.mission.title, description = s.mission.description, rewardBps = s.mission.rewardBps }
             };
 
         public static ReturnPoint Copy(ReturnPoint s)
@@ -105,7 +109,8 @@ namespace BlackWhale.UI.State
                 totalAssets = s.totalAssets,
                 cumulativeProfit = s.cumulativeProfit,
                 returnHistory = s.returnHistory?.Select(Copy).ToArray(),
-                swapAccountId = s.swapAccountId, swapAccountProfit = s.swapAccountProfit, swapBonus = s.swapBonus, swapAccountReturnBps = s.swapAccountReturnBps
+                swapAccountId = s.swapAccountId, swapAccountProfit = s.swapAccountProfit, swapBonus = s.swapBonus, swapAccountReturnBps = s.swapAccountReturnBps,
+                missionBonus = s.missionBonus
             };
 
         public static Scoreboard Copy(Scoreboard s)

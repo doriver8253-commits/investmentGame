@@ -38,5 +38,6 @@
     <Compile Include="../../Assets/Tests/Network/Editor/StockPatternValidation.cs" />
     <Compile Include="../../Assets/Tests/Network/Editor/StockSystemValidation.cs" />
     <Compile Include="../../Assets/Tests/Network/Editor/SwapValidation.cs" />
+    <Compile Include="../../Assets/Tests/Network/Editor/NewsValidation.cs" />
   </ItemGroup>
 </Project>

@@ -367,16 +367,47 @@ namespace BlackWhale.UI.View
             _swapGroup.alpha = 0f; _swapGroup.blocksRaycasts = false;
         }
 
-        /// <summary>[실험] 교환 턴이면 누구 계좌를 조종 중인지, 내 계좌는 누가 조종 중인지 보여 준다.</summary>
+        /// <summary>
+        /// 화면 위쪽 안내 띠(전광판 알림이 없을 때만 보임).
+        /// - 교환 턴: 누구 계좌를 조종 중인지, 내 계좌는 누가 조종 중인지
+        /// - 평소 턴: 이번 턴 미션
+        /// 둘째 줄에는 가장 최근 뉴스(루머·속보)가 있으면 그것을 보여 준다.
+        /// </summary>
         private void RefreshSwapRibbon()
         {
             var s = Store.Public;
-            bool show = s?.swapTurn == true && (s.phase == Protocol.Info || s.phase == Protocol.Investment || s.phase == Protocol.Reveal);
-            if (!show) { _swapText.text = ""; return; }
-            string me = _c.LocalPlayerId, target = SwapRules.ActingAccount(s, me), hunter = SwapRules.ControllerOf(s, me);
-            string text = "<color=" + SwapColor + "><b>교환 턴</b></color>  지금 <color=" + SwapColor + "><b>" + target + "</b></color>의 계좌를 운용 중 · 목표: <b>" + target + "를 최대한 떨어뜨리기</b>"
-                + "\n<size=14><color=#BBBBBB>견제왕(가장 많이 떨어뜨린 1명)은 그 하락률의 " + s.swapBonusPercent + "%를 수익률로 받음 · 내 계좌는 " + hunter + "가 운용 중</color></size>";
-            if (_swapText.text != text) { _swapText.text = text; FitUnderline(_swapLine, _swapText); }
+            bool live = s != null && s.stockSystem && (s.phase == Protocol.Info || s.phase == Protocol.Investment || s.phase == Protocol.Reveal);
+            if (!live || !s.swapTurn && s.mission == null && (s.news == null || s.news.Length == 0)) { _swapText.text = ""; return; }
+            var latest = s.news != null && s.news.Length > 0 ? s.news[s.news.Length - 1] : null;
+            string newsLine = latest == null ? null : "<size=14>" + NewsColored(latest) + "</size>";
+            string text;
+            if (s.swapTurn)
+            {
+                string me = _c.LocalPlayerId, target = SwapRules.ActingAccount(s, me), hunter = SwapRules.ControllerOf(s, me);
+                text = "<color=" + SwapColor + "><b>교환 턴</b></color>  지금 <color=" + SwapColor + "><b>" + target + "</b></color>의 계좌를 운용 중 · 목표: <b>" + target + "를 최대한 떨어뜨리기</b>"
+                    + "\n" + (newsLine ?? "<size=14><color=#BBBBBB>견제왕(가장 많이 떨어뜨린 1명)은 그 하락률의 " + s.swapBonusPercent + "%를 수익률로 받음 · 내 계좌는 " + hunter + "가 운용 중</color></size>");
+            }
+            else
+            {
+                string head = s.mission != null
+                    ? "<color=" + MissionColor + "><b>이번 턴 미션</b></color>  " + s.mission.title + "  <size=14><color=#BBBBBB>(성공 시 +" + s.mission.rewardBps / 100 + "%)</color></size>"
+                    : "<color=" + MissionColor + "><b>뉴스</b></color>";
+                text = head + "\n" + (newsLine ?? "<size=14><color=#BBBBBB>" + s.mission.description + "</color></size>");
+            }
+            if (_swapText.text != text)
+            {
+                _swapText.text = text;
+                _swapLine.color = s.swapTurn ? (Color)new Color32(0xFF, 0x6B, 0x6B, 0xFF) : (Color)new Color32(0xFF, 0xD1, 0x66, 0xFF);
+                FitUnderline(_swapLine, _swapText);
+            }
+        }
+        private const string MissionColor = "#FFD166";
+        /// <summary>뉴스 한 줄. 루머는 노란색, 속보는 오르면 빨강·내리면 파랑(한국 증시 색).</summary>
+        private static string NewsColored(MarketNews n)
+        {
+            if (n == null) return "";
+            string color = n.kind == NewsRules.Rumor ? "#FFD166" : n.direction > 0 ? "#FF6B6B" : "#6BA8FF";
+            return "<color=" + color + "><b>" + n.text + "</b></color>";
         }
 
         private void BuildOverlays()
@@ -490,7 +521,9 @@ namespace BlackWhale.UI.View
                 string phaseKey = s.turn + "|" + s.phase + "|" + s.developerRevision;
                 var day = _c.HasCurrentPlayerView ? StockRules.CurrentDay(s, Store.View?.portfolio) : null;
                 bool contextChanged = phaseKey != _lastPhaseKey || day != _lastDay;
-                if (contextChanged) ClearBanners();
+                // 위쪽 안내 띠(교환 턴·미션·뉴스)가 있는 턴에는 매일 뜨던 'N일차' 알림을 띄우지 않는다(일차는 매매 화면 위에 항상 표시됨).
+                bool ribbonTurn = s.stockSystem && (s.swapTurn || s.mission != null || (s.news?.Length ?? 0) > 0);
+                if (phaseKey != _lastPhaseKey || contextChanged && !ribbonTurn) ClearBanners();
                 if (phaseKey != _lastPhaseKey)
                 {
                     _lastCoins = -1;
@@ -504,6 +537,12 @@ namespace BlackWhale.UI.View
                     // [실험] 교환 턴 시작: 화면 전체 안내 카드(누르거나 7초 뒤 닫힘)
                     if (s.swapTurn && s.phase == Protocol.Info)
                         SwapFx.Intro(FxLayer, SwapRules.ActingAccount(s, _c.LocalPlayerId), SwapRules.ControllerOf(s, _c.LocalPlayerId), s.swapBonusPercent);
+                    // 교환 턴 바로 다음 턴: 다시 내 계좌로 돌아왔다고 알려 준다.
+                    if (!s.swapTurn && s.phase == Protocol.Info && s.swapTurns != null && s.swapTurns.Contains(s.turn - 1))
+                        ShowBannerAlways("<color=" + SwapColor + "><b>교환 턴 끝!</b></color> 이번 턴부터 다시 <b>내 계좌</b>를 운용합니다.");
+                    // 이번 턴 미션 안내
+                    if (s.phase == Protocol.Info && s.mission != null)
+                        ShowBannerAlways("<color=" + MissionColor + "><b>이번 턴 미션 · " + s.mission.title + "</b></color>  " + s.mission.description);
                     if (s.phase == Protocol.Info || s.phase == Protocol.Reveal) ShowPage(1);
                     if (s.phase == Protocol.Lobby || s.phase == Protocol.Selection || s.phase == StockRules.AugmentPhase || s.phase == Protocol.Investment || s.phase == Protocol.Result) ShowPage(0);
                 }
@@ -524,9 +563,21 @@ namespace BlackWhale.UI.View
                         if (s.publicSelectionPlayerId == _c.LocalPlayerId) ShowPage(1);
                     }
                 }
-                if (contextChanged && day.HasValue && !s.swapTurn) // 교환 턴에는 일차 알림 대신 교환 턴 안내 띠를 계속 보여 준다
+                if (contextChanged && day.HasValue && !ribbonTurn) // 교환 턴·미션 턴에는 일차 알림 대신 위쪽 안내 띠를 계속 보여 준다
                     ShowBanner("<b>" + s.turn + "턴 · 현재 " + day.Value + "일차</b> 주가 공개");
                 _lastDay = day;
+
+                // 실시간 뉴스: 새로 뜬 루머·속보를 전광판에 크게 띄우고 효과음
+                string newsKey = s.turn + "|" + s.developerRevision;
+                int newsCount = s.news?.Length ?? 0;
+                if (newsKey != _lastNewsKey) { _lastNewsKey = newsKey; _lastNewsCount = s.phase == Protocol.Investment ? 0 : newsCount; }
+                if (newsCount > _lastNewsCount)
+                {
+                    ClearBanners(); // 쌓인 알림보다 뉴스가 먼저
+                    for (int i = _lastNewsCount; i < newsCount; i++) ShowBannerAlways(NewsColored(s.news[i]));
+                    UiSound.Play(s.news[newsCount - 1].kind == NewsRules.Breaking ? UiSound.Kind.Turn : UiSound.Kind.Coin);
+                }
+                _lastNewsCount = newsCount;
             }
 
             var v = Store.View;
@@ -580,10 +631,17 @@ namespace BlackWhale.UI.View
                 foreach (var row in board.rows) if (row != null) { _fxAssets[row.playerId] = row.totalAssets; _fxRanks[row.playerId] = row.rank; }
                 ShowBanner(board.gameComplete ? (s.totalTurns > 0 ? s.totalTurns : 10) + "턴 최종 승자 · " + board.winnerPlayerId :
                     board.turn + "턴 정산 완료 · 1위 " + top.playerId + " (" + DisplayFormat.Percent(top.turnReturnBps) + ")");
+                if (mine != null && mine.missionBonus > 0)
+                    ShowBannerAlways("<color=" + MissionColor + "><b>미션 성공!</b></color> 보너스 +" + DisplayFormat.Money(mine.missionBonus));
+                // 교환 턴 예고: 다음 턴이 교환 턴이면 미리 알려 준다(갑자기 바뀌는 느낌 줄이기)
+                if (!board.gameComplete && s.swapTurns != null && s.swapTurns.Contains(board.turn + 1))
+                    ShowBannerAlways("<color=" + SwapColor + "><b>다음 턴은 교환 턴!</b></color> 옆 사람 계좌를 대신 운용합니다. 그 계좌를 <b>떨어뜨릴수록</b> 유리해요.");
             }
         }
 
         private string _lastEndReason = "";
+        private string _lastNewsKey = "";
+        private int _lastNewsCount;
 
         private void OnAutomatic(string resultType)
         {

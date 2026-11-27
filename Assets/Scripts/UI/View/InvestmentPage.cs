@@ -979,6 +979,7 @@ namespace BlackWhale.UI.View
                   // [실험] 교환 턴: 조종한 계좌의 손익과 받은 견제 보너스
                   .Append(string.IsNullOrEmpty(r.swapAccountId) ? "" : "   <size=13>" + (r.swapBonus > 0 ? "<color=#FF6B6B>견제왕 +" + DisplayFormat.Money(r.swapBonus) + "</color> " : "")
                       + "<color=#8C8C8C>(" + r.swapAccountId + " 계좌 " + DisplayFormat.Percent(r.swapAccountReturnBps) + ")</color></size>")
+                  .Append(r.missionBonus > 0 ? "   <size=13><color=#FFD166>미션 +" + DisplayFormat.Money(r.missionBonus) + "</color></size>" : "")
                   .Append(me ? "</b>" : "").Append('\n');
             }
             sb.Append("\n").Append(OrderLines());

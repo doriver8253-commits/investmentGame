@@ -496,7 +496,7 @@ namespace BlackWhale.Flow
             if (StockMode && (turn == 1 || turn == 4))
             { Stock.BeginAugmentSelection(); Enter(StockRules.AugmentPhase, now, settings.AbilitySelectionSeconds ?? 20); }
             else Enter(progression != null && (turn == 3 || turn == 6 || turn == 9) ? Protocol.Auction : Protocol.Info,
-                now, progression != null && (turn == 3 || turn == 6 || turn == 9) ? 15 : settings.InfoSeconds);
+                now, progression != null && (turn == 3 || turn == 6 || turn == 9) ? 15 : settings.InfoSeconds + (SwapActive ? SwapRules.IntroSeconds : 0)); // 교환 턴: 안내 카드 보는 시간만큼 더
             foreach (Member member in members) SendView(member.Id);
         }
         private void Enter(string next, double now, double duration)
@@ -548,7 +548,7 @@ namespace BlackWhale.Flow
                 int day = Math.Min(30, (int)Math.Floor((now - phaseEnd + 30 * lobbySettings.daySeconds) / lobbySettings.daySeconds));
                 if (Stock.ProcessedDay < day) {
                     while (Stock.ProcessedDay < day) Stock.SimulateDay();
-                    SendAllViews();
+                    SendAllViews(); PublishState(); // 새 날의 뉴스(루머·속보)도 바로 보낸다
                 }
             }
         }
@@ -732,6 +732,8 @@ namespace BlackWhale.Flow
                 swapTurn = SwapActive, swapControllerIds = SwapActive ? (string[])initialOrder.Clone() : new string[0],
                 swapAccountIds = SwapActive ? initialOrder.Select(Account).ToArray() : new string[0],
                 swapTurns = StockMode ? (int[])SwapRules.Turns.Clone() : new int[0], swapBonusPercent = SwapRules.BonusPercent,
+                news = StockMode && turn > 0 && market is IMarketNews feed ? feed.GetNews() : new MarketNews[0],
+                mission = StockMode && turn > 0 && market is IMarketNews missionFeed ? missionFeed.GetMission() : null,
                 shareMarket = StockMode && turn > 0 ? Stock.GetShareMarket() : new CompanyShareState[0],
                 windowInformation = WindowMode, publicSelectionActive = PublicPicking, publicSelectionIndex = publicPickIndex,
                 publicSelectionPlayerId = PublicPicking ? order[publicPickIndex] : "",

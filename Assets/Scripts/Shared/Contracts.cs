@@ -121,6 +121,9 @@ namespace BlackWhale.Shared
         public string[] swapControllerIds, swapAccountIds;
         public int[] swapTurns;
         public int swapBonusPercent;
+        // 실시간 뉴스(루머·속보)와 이번 턴 미션. 주식 모드에서만 채운다.
+        public MarketNews[] news;
+        public TurnMission mission;
     }
     [Serializable] public sealed class VisibleBundle
     {
@@ -174,6 +177,8 @@ namespace BlackWhale.Shared
         public string swapAccountId;
         public long swapAccountProfit, swapBonus;
         public int swapAccountReturnBps;
+        // 이번 턴 미션 성공 보너스(실패하면 0)
+        public long missionBonus;
     }
     [Serializable] public sealed class Scoreboard
     {

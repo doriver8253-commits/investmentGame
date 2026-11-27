@@ -75,11 +75,13 @@ namespace BlackWhale.Rules
             return () => { foreach (var action in restore) action(); ProcessedDay = savedDay; liveTrading = savedLive; allLocked = savedLocked; };
         }
         public bool StockEnabled { get; private set; }
-        public static MarketService CreateStockSystem(int seed, StockPatternLibrary library = null)
+        /// <param name="marketNews">true면 실시간 뉴스(루머·속보)와 턴 미션을 켠다. 실제 게임(DevTabletUI)은 켜고, 규칙 검증은 끈 채로 비교한다.</param>
+        public static MarketService CreateStockSystem(int seed, StockPatternLibrary library = null, bool marketNews = false)
         {
             var rules = new InvestmentRules { initialAssets = 10000, entryAtOpen = true, minHoldingDays = 1, maxHoldingDays = 30, maxIntervalsPerCompany = 0 };
             var frozenLibrary = (library ?? StockPatternLibrary.CreateDefault()).Copy();
-            return new MarketService(t => GenerateStockMarket(seed, t, frozenLibrary), rules) { StockEnabled = true, stockSeed = seed, UsesWindowInformation = true };
+            return new MarketService(t => marketNews ? ApplyShocks(GenerateStockMarket(seed, t, frozenLibrary), seed, t) : GenerateStockMarket(seed, t, frozenLibrary), rules)
+                { StockEnabled = true, stockSeed = seed, UsesWindowInformation = true, NewsEnabled = marketNews };
         }
         // Pattern-only markets have no additional BIO outcome event.
         public static int BioSuccessChance(int seed, int turn) => 0;
@@ -93,6 +95,7 @@ namespace BlackWhale.Rules
             ProcessedDay = 0;
             liveTrading = false;
             ClearSwap(); // 교환 턴이면 GameRoom이 턴 시작 직후 다시 설정한다.
+            BeginNewsTurn();
             foreach (var history in fills.Values) history.Clear();
             foreach (string id in players)
             {
