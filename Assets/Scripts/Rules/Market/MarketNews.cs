@@ -33,6 +33,7 @@ namespace BlackWhale.Rules
 
         /// <summary>실시간 시장·뉴스·미션 사용 여부(CreateStockSystem의 marketNews).</summary>
         public bool NewsEnabled { get; private set; }
+        public bool LiveMarket => StockEnabled && NewsEnabled;
         private static readonly StockVolatilitySettings NewsVolatility = new StockVolatilitySettings();
         private static int Limit(string company) => NewsVolatility.DailyLimitBps(company);
 
@@ -190,10 +191,10 @@ namespace BlackWhale.Rules
         /// <summary>지금까지 나온 이번 턴 뉴스(오래된 것부터).</summary>
         public MarketNews[] GetNews() => StockEnabled ? liveNews.Select(CopyNews).ToArray() : Array.Empty<MarketNews>();
 
-        /// <summary>기업별 지금 분위기(화면 표시용). 실시간 매매 중에만.</summary>
+        /// <summary>기업별 지금 분위기(화면 표시용). 정보 탐색부터 주문 잠금 전까지.</summary>
         public CompanyMood[] GetMoods()
         {
-            if (!StockEnabled || !NewsEnabled || !liveTrading || allLocked) return Array.Empty<CompanyMood>();
+            if (!StockEnabled || !NewsEnabled || allLocked || turn == 0) return Array.Empty<CompanyMood>();
             int holders = Holders("FOOD");
             return new[] {
                 new CompanyMood { companyId = "AI", percent = AiCrashPercent(), text = "붕괴 확률 " + AiCrashPercent() + "%" },

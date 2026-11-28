@@ -125,6 +125,7 @@ namespace BlackWhale.Shared
         public MarketNews[] news;
         public TurnMission mission;
         public CompanyMood[] moods;
+        public bool liveMarket;
     }
     [Serializable] public sealed class VisibleBundle
     {

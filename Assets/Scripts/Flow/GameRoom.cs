@@ -735,6 +735,7 @@ namespace BlackWhale.Flow
                 news = StockMode && turn > 0 && market is IMarketNews feed ? feed.GetNews() : new MarketNews[0],
                 mission = StockMode && turn > 0 && market is IMarketNews missionFeed ? missionFeed.GetMission() : null,
                 moods = StockMode && turn > 0 && market is IMarketNews moodFeed ? moodFeed.GetMoods() : new CompanyMood[0],
+                liveMarket = StockMode && market is IMarketNews liveFeed && liveFeed.LiveMarket,
                 shareMarket = StockMode && turn > 0 ? Stock.GetShareMarket() : new CompanyShareState[0],
                 windowInformation = WindowMode, publicSelectionActive = PublicPicking, publicSelectionIndex = publicPickIndex,
                 publicSelectionPlayerId = PublicPicking ? order[publicPickIndex] : "",

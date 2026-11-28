@@ -94,6 +94,7 @@ namespace BlackWhale.UI.State
                     text = n.text, direction = n.direction, moveBps = n.moveBps, accuracyPercent = n.accuracyPercent }).ToArray(),
                 mission = s.mission == null ? null : new TurnMission { id = s.mission.id, companyId = s.mission.companyId,
                     title = s.mission.title, description = s.mission.description, rewardBps = s.mission.rewardBps },
+                liveMarket = s.liveMarket,
                 moods = s.moods?.Select(m => m == null ? null : new CompanyMood { companyId = m.companyId, text = m.text, percent = m.percent }).ToArray()
             };
 

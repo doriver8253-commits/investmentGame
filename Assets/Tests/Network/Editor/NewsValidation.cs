@@ -211,6 +211,8 @@ namespace BlackWhale.Tests
             send(1, "START_GAME", null);
             Action deadline = () => { var s = room.Snapshot(); clock.Seconds = s.phaseEndsAtServerSeconds; room.Tick(); };
             Check(room.Snapshot().mission != null && room.Snapshot().news.Length == 0, "turn one shows its mission, no news yet");
+            while (room.Snapshot().phase != Protocol.Info) deadline();
+            Check(room.Snapshot().liveMarket && room.Snapshot().moods.Any(x => x.companyId == "AI") && DtoCopy.Copy(room.Snapshot()).liveMarket, "live market flag and moods are visible from the information phase");
             while (room.Snapshot().phase != Protocol.Investment) deadline();
             double start = room.Snapshot().phaseEndsAtServerSeconds - 30 * StockRules.DaySeconds;
             clock.Seconds = start + 30 * StockRules.DaySeconds - 0.01; room.Tick();

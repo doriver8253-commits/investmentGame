@@ -62,6 +62,21 @@ namespace BlackWhale.Shared
         public const int WarnPercent = 25;
         /// <summary>주가 바닥(0일 대비 -90%).</summary>
         public const int LowestBps = -9000;
+
+        /// <summary>실시간 시장의 기업 성격(카드 안내 줄).</summary>
+        public static string Personality(string companyId)
+        {
+            switch (companyId)
+            {
+                case "AUTO": return "패턴대로 움직임 · 정보가 중요";
+                case "FOOD": return "보유한 사람이 많을수록 출렁임";
+                case "AI": return "오르는 추세 · 몰리면 붕괴";
+                case "BIO": return "들고 버티면 언젠가 급등";
+                case "SPACE": return "며칠씩 이어지는 추세";
+                case "BANK": return "안전 · 거의 안 움직임";
+                default: return "";
+            }
+        }
     }
 
     /// <summary>뉴스·미션을 제공하는 시장(B). GameRoom(A)이 PublicState에 실어 보낸다.</summary>
@@ -70,5 +85,7 @@ namespace BlackWhale.Shared
         MarketNews[] GetNews();
         TurnMission GetMission();
         CompanyMood[] GetMoods();
+        /// <summary>실시간 시장(군중 반응·뉴스·미션)이 켜져 있는지.</summary>
+        bool LiveMarket { get; }
     }
 }

@@ -756,6 +756,7 @@ namespace BlackWhale.UI.View
             _chart.SetData(_bars);
             _chart.SetTrendThroughDay(revealed != null ? 30 : _c.Store.Public?.stockSystem == true && _c.Store.Public.phase == Protocol.Investment ? _c.Store.View?.portfolio?.processedDay : (int?)null);
             _chart.SetHiddenTail(_c.Store.Public?.phase == Protocol.Info);
+            if (!_hovering) _tip.text = TipText();
             _chart.SetCurrentDay(StockRules.CurrentDay(_c.Store.Public, _c.Store.View?.portfolio));
             _chart.SetFills(null); // 진입·청산 체결 막대는 그래프에 그리지 않음
             _chart.ShowTradeLabels = false; // 예약·진입청산 구간은 띠만(시가·종가 글자 없음)
@@ -763,9 +764,20 @@ namespace BlackWhale.UI.View
             else _chart.SetTradeIntervals(_c.Store.TradePlans.ChartIntervals(_c.Store.View, _c.Store.CurrentTurn, _companyId, _c.Store.OrderLocked), !_c.Store.OrderLocked);
         }
 
+        private bool _hovering;
+        /// <summary>안내 줄: 실시간 시장이면 기업 성격 + 지금 확률(AI 붕괴·BIO 급등·FOOD 변동폭), 아니면 예전처럼 변동성.</summary>
+        private string TipText()
+        {
+            var s = _c.Store.Public;
+            if (s?.liveMarket != true) return _volatility;
+            var mood = s.moods?.FirstOrDefault(m => m != null && m.companyId == _companyId);
+            return "<b>" + NewsRules.Personality(_companyId) + "</b>" + (mood == null ? "" : "  <color=#FFD166>" + mood.text + "</color>");
+        }
+
         private void OnHover(int? day)
         {
-            _tip.text = day.HasValue && day.Value < _bars.Length ? DailyBarModel.Tooltip(_bars[day.Value]) : _volatility;
+            _hovering = day.HasValue && day.Value < _bars.Length;
+            _tip.text = _hovering ? DailyBarModel.Tooltip(_bars[day.Value]) : TipText();
         }
 
         private void RefreshButtons()
