@@ -368,7 +368,11 @@ namespace BlackWhale.UI.View
                 var owners = company?.owners ?? Array.Empty<ShareOwner>();
                 int used = owners.Sum(o => o.shares + o.reserved), total = company?.totalShares ?? (id == "BANK" ? StockRules.BankSupply : StockRules.Supply);
                 string tag = id == "BANK" ? "" : used >= total ? "  <color=#FFFFFF><b>매진</b></color>" : total - used <= 4 ? "  <color=#FFFFFF>품절 임박</color>" : "";
-                card.Heading.text = "<b>" + id + "</b> · " + used + "/" + total + "주" + tag;
+                // 실시간 시장 분위기: AI 붕괴 확률(빨강일수록 위험), BIO 급등 확률, FOOD 변동폭
+                var mood = State.moods?.FirstOrDefault(m => m != null && m.companyId == id);
+                string moodTag = mood == null ? "" : "  <color=" + (id == "AI" ? (mood.percent >= 25 ? "#FF6B6B" : mood.percent >= 12 ? "#FFD166" : "#BBBBBB")
+                    : id == "BIO" ? (mood.percent >= 25 ? "#7CFFB2" : "#BBBBBB") : "#BBBBBB") + ">" + mood.text + "</color>";
+                card.Heading.text = "<b>" + id + "</b> · " + used + "/" + total + "주" + tag + moodTag;
                 // 진입·청산 단계: 내가 보유한(매매 가능한) 기업 강조, 미보유는 흐리게
                 bool investing = State.phase == Protocol.Investment && !controller.Store.OrderLocked;
                 int mine = Portfolio?.holdings?.Where(h => h.companyId == id).Sum(h => h.shares) ?? 0;

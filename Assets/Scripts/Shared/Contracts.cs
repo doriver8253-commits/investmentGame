@@ -124,6 +124,7 @@ namespace BlackWhale.Shared
         // 실시간 뉴스(루머·속보)와 이번 턴 미션. 주식 모드에서만 채운다.
         public MarketNews[] news;
         public TurnMission mission;
+        public CompanyMood[] moods;
     }
     [Serializable] public sealed class VisibleBundle
     {

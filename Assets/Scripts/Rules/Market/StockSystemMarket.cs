@@ -72,15 +72,17 @@ namespace BlackWhale.Rules
                 DeveloperCheckpoint.Map(stockReturns, values => values.ToDictionary(p => p.Key, p => p.Value.ToDictionary(c => c.Key, c => c.Value))),
                 DeveloperCheckpoint.Map(stockHistory, values => values.ToDictionary(p => p.Key, p => p.Value.ToDictionary(c => c.Key, c => c.Value)))
             };
-            return () => { foreach (var action in restore) action(); ProcessedDay = savedDay; liveTrading = savedLive; allLocked = savedLocked; };
+            var restoreLive = CaptureLiveMarket();
+            return () => { foreach (var action in restore) action(); restoreLive(); ProcessedDay = savedDay; liveTrading = savedLive; allLocked = savedLocked; };
         }
         public bool StockEnabled { get; private set; }
-        /// <param name="marketNews">true면 실시간 뉴스(루머·속보)와 턴 미션을 켠다. 실제 게임(DevTabletUI)은 켜고, 규칙 검증은 끈 채로 비교한다.</param>
+        /// <param name="marketNews">true면 실시간 시장(군중 반응·추세·폭락/급등), 뉴스(루머·속보), 턴 미션을 켠다.
+        /// 실제 게임(DevTabletUI)은 켜고, 기존 규칙 검증·봇 실험은 끈 채로 비교한다.</param>
         public static MarketService CreateStockSystem(int seed, StockPatternLibrary library = null, bool marketNews = false)
         {
             var rules = new InvestmentRules { initialAssets = 10000, entryAtOpen = true, minHoldingDays = 1, maxHoldingDays = 30, maxIntervalsPerCompany = 0 };
             var frozenLibrary = (library ?? StockPatternLibrary.CreateDefault()).Copy();
-            return new MarketService(t => marketNews ? ApplyShocks(GenerateStockMarket(seed, t, frozenLibrary), seed, t) : GenerateStockMarket(seed, t, frozenLibrary), rules)
+            return new MarketService(t => marketNews ? LiveBase(GenerateStockMarket(seed, t, frozenLibrary)) : GenerateStockMarket(seed, t, frozenLibrary), rules)
                 { StockEnabled = true, stockSeed = seed, UsesWindowInformation = true, NewsEnabled = marketNews };
         }
         // Pattern-only markets have no additional BIO outcome event.
@@ -264,6 +266,7 @@ namespace BlackWhale.Rules
         {
             if (ProcessedDay >= 30) return;
             int day = ++ProcessedDay;
+            if (NewsEnabled && liveTrading) ApplyLiveMoves(day); // 실시간 시장: 오늘의 군중 반응·추세·속보를 시세에 더한다
             foreach (var p in stockPlayers.Values)
             {
                 foreach (var slot in p.Slots)

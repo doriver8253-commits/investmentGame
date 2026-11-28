@@ -25,11 +25,15 @@ namespace BlackWhale.Shared
         public int rewardBps;
     }
 
+    /// <summary>실시간 매매 중 기업 분위기(화면 표시용): AI 붕괴 확률, BIO 급등 확률, FOOD 변동폭.</summary>
+    [Serializable] public sealed class CompanyMood { public string companyId, text; public int percent; }
+
     public static class NewsRules
     {
-        public const string Rumor = "RUMOR", Breaking = "BREAKING";
-        /// <summary>한 턴에 일어나는 속보 수.</summary>
+        public const string Rumor = "RUMOR", Breaking = "BREAKING", Event = "EVENT", Warning = "WARNING";
+        /// <summary>한 턴에 일어나는 속보 수(패턴 기업 중).</summary>
         public const int ShocksPerTurn = 2;
+        public static readonly string[] ShockCompanies = { "FOOD", "AUTO", "SPACE" };
         /// <summary>속보가 일어날 수 있는 날(포함). hidden 전조(22일~)보다 앞이다.</summary>
         public const int FirstShockDay = 6, LastShockDay = 20;
         /// <summary>루머가 속보보다 며칠 먼저 뜨는지. 실시간 하루 2초 → 약 6초 대응할 시간.</summary>
@@ -41,6 +45,23 @@ namespace BlackWhale.Shared
         /// <summary>미션 성공 보너스: 턴 시작 자산의 3%.</summary>
         public const int MissionRewardBps = 300;
 
+        // 실시간 시장(시장 반응)
+        /// <summary>AI·BIO는 미리 정한 패턴을 이 비율(%)만 쓰고 나머지는 시장 반응으로 정한다.</summary>
+        public const int LiveOnlyPatternPercent = 40;
+        /// <summary>AI 붕괴 확률 = 기본 + 연속 상승일마다 + (3명 이상 보유 시) 몰림 + (합계 20주 이상이면 몰림의 절반)</summary>
+        public const int AiBaseCrashPercent = 3, AiStreakCrashPercent = 4, AiCrowdCrashPercent = 12;
+        /// <summary>AI가 무너지지 않는 날의 기본 상승 쪽 힘(하루 한도의 %).</summary>
+        public const int AiDriftPercent = 25;
+        /// <summary>BIO 급등 확률 = 기본 + 누적 보유량(주·일) ÷ 이 값</summary>
+        public const int BioBaseSpikePercent = 2, BioPressurePerPercent = 10;
+        /// <summary>BIO 급등 크기(하루 한도 × 값/10)와, 기다리는 동안 매일 새는 정도(하루 한도의 %).</summary>
+        public const int BioSpikeMinTenths = 15, BioSpikeMaxTenths = 30, BioBleedPercent = 15;
+        /// <summary>FOOD: 보유한 사람 1명당 패턴 등락이 이만큼(%) 커진다.</summary>
+        public const int FoodAmplifyPercentPerHolder = 30;
+        /// <summary>이 확률(%)을 넘으면 경고 뉴스를 한 번 띄운다.</summary>
+        public const int WarnPercent = 25;
+        /// <summary>주가 바닥(0일 대비 -90%).</summary>
+        public const int LowestBps = -9000;
     }
 
     /// <summary>뉴스·미션을 제공하는 시장(B). GameRoom(A)이 PublicState에 실어 보낸다.</summary>
@@ -48,5 +69,6 @@ namespace BlackWhale.Shared
     {
         MarketNews[] GetNews();
         TurnMission GetMission();
+        CompanyMood[] GetMoods();
     }
 }

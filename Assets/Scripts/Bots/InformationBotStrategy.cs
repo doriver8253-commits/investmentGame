@@ -122,6 +122,13 @@ namespace BlackWhale.Bots
                     : Policy.Personality == BotPersonality.Stable && id != "FOOD" && id != "AUTO" ? -1400 : 0) : 0;
                 bool buy = gain + Preference(id) + hiddenBias + urgency + Noise(Policy.PredictionNoise) > 0;
                 // 교환 턴: 남의 계좌를 운용하므로 내릴 것 같은 기업을 사고 BANK는 비운다.
+                // 실시간 시장 분위기: 보통·어려움 봇은 AI 붕괴 위험이 크면 피하고, BIO 급등 확률이 크면 탄다.
+                var mood = state.moods?.FirstOrDefault(m => m != null && m.companyId == id);
+                if (mood != null && Policy.Difficulty != BotDifficulty.Easy)
+                {
+                    if (id == "AI" && mood.percent >= 20) buy = false;
+                    if (id == "BIO" && mood.percent >= 20) buy = true;
+                }
                 if (state.swapTurn) buy = id != "BANK" && gain + Noise(Policy.PredictionNoise) < 0;
                 decision = new StockDecision { Buy = buy, ReadyAt = now + NextReactionSeconds() };
                 stockDecisions.Add(key, decision);

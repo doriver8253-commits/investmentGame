@@ -93,7 +93,8 @@ namespace BlackWhale.UI.State
                 news = s.news?.Select(n => n == null ? null : new MarketNews { day = n.day, eventDay = n.eventDay, companyId = n.companyId, kind = n.kind,
                     text = n.text, direction = n.direction, moveBps = n.moveBps, accuracyPercent = n.accuracyPercent }).ToArray(),
                 mission = s.mission == null ? null : new TurnMission { id = s.mission.id, companyId = s.mission.companyId,
-                    title = s.mission.title, description = s.mission.description, rewardBps = s.mission.rewardBps }
+                    title = s.mission.title, description = s.mission.description, rewardBps = s.mission.rewardBps },
+                moods = s.moods?.Select(m => m == null ? null : new CompanyMood { companyId = m.companyId, text = m.text, percent = m.percent }).ToArray()
             };
 
         public static ReturnPoint Copy(ReturnPoint s)

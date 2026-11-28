@@ -20,103 +20,153 @@ namespace BlackWhale.Tests
         {
             var names = new List<string>();
             Action<string, Action> run = (name, test) => { test(); names.Add("NEWS/" + name); };
-            run("shocks-are-steps-on-top-of-the-same-pattern", Steps);
-            run("information-shows-only-shocks-that-already-happened", KnownValues);
+            run("same-seed-same-actions-same-market", Deterministic);
+            run("auto-follows-its-pattern-except-breaking-news", AutoPattern);
+            run("information-shows-pattern-plus-moves-so-far", KnownValues);
+            run("ai-crowding-raises-crash-and-bio-holding-raises-spike", Crowd);
+            run("live-price-leaves-the-first-visible-range", NoCeiling);
             run("rumor-three-days-early-then-breaking-news", Feed);
             run("mission-bonus-for-clearing-player-only", Mission);
-            run("room-publishes-news-and-mission-and-skips-mission-on-swap-turn", Room);
+            run("room-publishes-news-moods-and-mission-and-skips-mission-on-swap-turn", Room);
             return names.ToArray();
         }
 
-        private static (MarketService plain, MarketService news) Pair(int seed, int turn = 1)
+        private static MarketService Live(int seed, bool news = true)
         {
-            var plain = MarketService.CreateStockSystem(seed);
-            var news = MarketService.CreateStockSystem(seed, marketNews: true);
-            for (int t = 1; t <= turn; t++)
+            var m = MarketService.CreateStockSystem(seed, marketNews: news);
+            m.BeginTurn(Ctx(1, Protocol.Info), Players);
+            m.BeginLiveTrading();
+            return m;
+        }
+        private static void Hold(MarketService m, string player, string company, int shares)
+            => Check(m.SetPosition(Ctx(1, Protocol.Investment, player), new ShareOrder { companyId = company, targetShares = shares }).Success, "position " + player + " " + company);
+        private static int[] Prices(MarketService m, string company) => m.GetWindow(1, company, 0, 31);
+        private static void Finish(MarketService m) { while (m.ProcessedDay < 30) m.SimulateDay(); m.LockPortfolios(); }
+
+        private static void Deterministic()
+        {
+            Func<MarketService> play = () => { var m = Live(21); Hold(m, "P1", "AI", 10); Hold(m, "P2", "BIO", 10);
+                for (int d = 0; d < 12; d++) m.SimulateDay(); Hold(m, "P1", "AI", 0); Finish(m); return m; };
+            var a = play(); var b = play();
+            Check(InvestmentRules.CompanyIds.All(c => Prices(a, c).SequenceEqual(Prices(b, c))), "same prices");
+            Check(a.GetNews().Select(n => n.text).SequenceEqual(b.GetNews().Select(n => n.text)), "same news");
+            bool changed = false;
+            for (int seed = 1; seed <= 20 && !changed; seed++)
             {
-                plain.BeginTurn(Ctx(t, Protocol.Info), Players); news.BeginTurn(Ctx(t, Protocol.Info), Players);
+                var alone = Live(seed); Hold(alone, "P1", "AI", 5); Finish(alone);
+                var crowd = Live(seed); foreach (var p in Players) Hold(crowd, p, "AI", 5); Finish(crowd);
+                changed = !Prices(alone, "AI").SequenceEqual(Prices(crowd, "AI"));
             }
-            return (plain, news);
+            Check(changed, "different actions can change the crowd-driven market");
         }
 
-        private static int[] Actual(MarketService m, int turn, string company)
+        private static void AutoPattern()
         {
-            m.LockPortfolios(); // 잠그면 전부 처리된 실제 시세가 보인다
-            return m.GetWindow(turn, company, 0, 31);
-        }
-
-        private static void Steps()
-        {
-            for (int seed = 1; seed <= 40; seed++)
+            int shocked = 0;
+            for (int seed = 1; seed <= 60; seed++)
             {
-                var (plain, news) = Pair(seed);
-                var diffs = InvestmentRules.CompanyIds.ToDictionary(c => c, c => {
-                    var a = Actual(news, 1, c); var b = Actual(plain, 1, c);
-                    return Enumerable.Range(0, 31).Select(d => a[d] - b[d]).ToArray(); });
-                Check(diffs["BANK"].All(v => v == 0), "BANK never gets news");
-                var hit = diffs.Where(p => p.Value.Any(v => v != 0)).ToArray();
-                Check(hit.Length == NewsRules.ShocksPerTurn, "exactly two companies get a shock each turn");
-                foreach (var p in hit)
-                {
-                    int day = Array.FindIndex(p.Value, v => v != 0);
-                    Check(day >= NewsRules.FirstShockDay && day <= NewsRules.LastShockDay, "shock day before the hidden prelude");
-                    Check(p.Value.Skip(day).All(v => v == p.Value[day]), "a shock shifts every later day by the same amount (a step)");
-                    Check(Math.Abs(p.Value[day]) >= new StockVolatilitySettings().DailyLimitBps(p.Key) * NewsRules.ShockMinTenths / 10, "shock is bigger than a normal daily limit");
-                }
-                var again = Pair(seed).news;
-                Check(InvestmentRules.CompanyIds.All(c => Actual(again, 1, c).SequenceEqual(Actual(news, 1, c))), "same seed, same news");
+                var news = Live(seed); var plain = Live(seed, false);
+                var before = Prices(news, "AUTO");
+                Check(before.SequenceEqual(Prices(plain, "AUTO")), "AUTO starts on the same pattern");
+                Finish(news); Finish(plain);
+                var a = Prices(news, "AUTO"); var b = Prices(plain, "AUTO");
+                var diff = Enumerable.Range(0, 31).Select(d => a[d] - b[d]).ToArray();
+                var breaking = news.GetNews().Where(n => n.companyId == "AUTO" && n.kind == NewsRules.Breaking).ToArray();
+                if (breaking.Length == 0) { Check(diff.All(v => v == 0), "AUTO without news is exactly its pattern"); continue; }
+                shocked++;
+                int day = breaking[0].day;
+                Check(day >= NewsRules.FirstShockDay && day <= NewsRules.LastShockDay, "news day before the hidden prelude");
+                Check(diff.Take(day).All(v => v == 0) && diff.Skip(day).All(v => v == breaking[0].moveBps), "AUTO news is one step");
+                Check(Math.Abs(breaking[0].moveBps) >= new StockVolatilitySettings().DailyLimitBps("AUTO") * NewsRules.ShockMinTenths / 10, "news is bigger than a normal day");
+                Check(Prices(news, "BANK").SequenceEqual(Prices(plain, "BANK")), "BANK unchanged");
             }
+            Check(shocked > 10, "AUTO gets news on some turns");
         }
 
         private static void KnownValues()
         {
-            var (plain, news) = Pair(11);
-            var shockCompany = InvestmentRules.CompanyIds.First(c => !Actual(Pair(11).news, 1, c).SequenceEqual(Actual(Pair(11).plain, 1, c)));
-            var actual = Actual(Pair(11).news, 1, shockCompany);
-            var basePath = Actual(Pair(11).plain, 1, shockCompany);
-            int day = Enumerable.Range(0, 31).First(d => actual[d] != basePath[d]);
-            news.BeginLiveTrading();
-            Check(news.GetWindow(1, shockCompany, 1, 30).SequenceEqual(basePath.Skip(1)), "before the news, bought information shows the plain pattern");
-            Check(news.GetOpenWindow(1, shockCompany, 1, 30).SequenceEqual(basePath.Take(30)), "opens also hide future news");
-            while (news.ProcessedDay < day - 1) news.SimulateDay();
-            Check(news.GetWindow(1, shockCompany, day, 1)[0] == basePath[day], "the day before, still the old picture");
-            news.SimulateDay();
-            Check(news.GetWindow(1, shockCompany, 1, 30).SequenceEqual(actual.Skip(1)), "after the news, past and future known points move together");
+            var m = Live(11); Hold(m, "P1", "AI", 10);
+            var start = Prices(m, "AI");
+            for (int d = 0; d < 10; d++) m.SimulateDay();
+            var mid = Prices(m, "AI");
+            int offset = mid[10] - start[10];
+            Check(Enumerable.Range(11, 20).All(d => mid[d] - start[d] == offset), "future known points = pattern + everything that happened so far");
+            Finish(m);
+            var end = Prices(m, "AI");
+            Check(end.Take(11).SequenceEqual(mid.Take(11)), "past days never change");
+            Check(m.GetOpenWindow(1, "AI", 1, 30).SequenceEqual(end.Take(30)), "opens follow the same picture");
+        }
+
+        private static int Events(MarketService m, string company) => m.GetNews().Count(n => n.companyId == company && n.kind == NewsRules.Event);
+
+        private static void Crowd()
+        {
+            int crowdedCrashes = 0, emptyCrashes = 0, heldSpikes = 0, emptySpikes = 0;
+            for (int seed = 1; seed <= 150; seed++)
+            {
+                var crowded = Live(seed); foreach (var p in Players) Hold(crowded, p, "AI", 5);
+                foreach (var p in Players) Hold(crowded, p, "BIO", 5);
+                Finish(crowded);
+                var empty = Live(seed); Finish(empty);
+                crowdedCrashes += Events(crowded, "AI"); emptyCrashes += Events(empty, "AI");
+                heldSpikes += Events(crowded, "BIO"); emptySpikes += Events(empty, "BIO");
+            }
+            Check(crowdedCrashes > emptyCrashes * 2, "four players in AI crash it much more often (" + crowdedCrashes + " vs " + emptyCrashes + ")");
+            Check(heldSpikes > emptySpikes * 2, "holding BIO builds up to spikes (" + heldSpikes + " vs " + emptySpikes + ")");
+            var probe = Live(3);
+            Check(probe.GetMoods().Single(x => x.companyId == "AI").percent == probe.AiCrashPercent(), "AI mood shows the real crash chance");
+            foreach (var p in Players) Hold(probe, p, "AI", 5);
+            Check(probe.AiCrashPercent() >= NewsRules.AiBaseCrashPercent + NewsRules.AiCrowdCrashPercent, "three or more holders add the crowd risk");
+            Check(Live(3, false).GetMoods().Length == 0, "no moods when live market is off");
+        }
+
+        private static void NoCeiling()
+        {
+            foreach (string company in new[] { "AI", "BIO", "SPACE", "FOOD" })
+            {
+                int broke = 0, total = 0;
+                for (int seed = 1; seed <= 80; seed++)
+                {
+                    var m = Live(seed); Hold(m, "P1", company, 10); Hold(m, "P2", company, 5);
+                    var seen = Prices(m, company);
+                    int hi = seen.Max(), lo = seen.Min();
+                    Finish(m);
+                    var end = Prices(m, company);
+                    total++; if (end.Max() > hi || end.Min() < lo) broke++;
+                }
+                Check(broke * 100 >= total * 70, company + " leaves the range you could see at the start in most turns (" + broke + "/" + total + ")");
+            }
         }
 
         private static void Feed()
         {
-            var news = Pair(5).news;
-            news.BeginLiveTrading();
-            Check(news.GetNews().Length == 0, "no news before trading starts");
-            var seen = new List<MarketNews>();
-            for (int day = 1; day <= 30; day++)
-            {
-                news.SimulateDay();
-                var feed = news.GetNews();
-                Check(feed.Length >= seen.Count && feed.Take(seen.Count).Select(n => n.text).SequenceEqual(seen.Select(n => n.text)), "news only grows, oldest first");
-                foreach (var n in feed.Skip(seen.Count)) Check(n.day == day, "news appears on its own day");
-                seen = feed.ToList();
-            }
-            Check(seen.Count == NewsRules.ShocksPerTurn * 2, "one rumor and one breaking story per shock");
-            foreach (var b in seen.Where(n => n.kind == NewsRules.Breaking))
-            {
-                var r = seen.Single(n => n.kind == NewsRules.Rumor && n.companyId == b.companyId);
-                Check(r.day == Math.Max(1, b.day - NewsRules.RumorLeadDays) && r.eventDay == b.day, "rumor comes three days early and names the day");
-                Check(r.accuracyPercent == NewsRules.RumorAccuracyPercent && (r.direction == 1 || r.direction == -1), "rumor shows its honest accuracy");
-                Check(Math.Sign(b.moveBps) == b.direction && b.text.Contains(b.companyId), "breaking news states the real move");
-            }
             int right = 0, total = 0;
             for (int seed = 1; seed <= 300; seed++)
             {
-                var m = Pair(seed).news; m.BeginLiveTrading(); while (m.ProcessedDay < 30) m.SimulateDay();
-                var f = m.GetNews();
-                foreach (var b in f.Where(n => n.kind == NewsRules.Breaking))
-                { total++; if (f.Single(n => n.kind == NewsRules.Rumor && n.companyId == b.companyId).direction == b.direction) right++; }
+                var m = Live(seed);
+                var seen = 0;
+                for (int day = 1; day <= 30; day++)
+                {
+                    m.SimulateDay();
+                    var feed = m.GetNews();
+                    Check(feed.Length >= seen && feed.Skip(seen).All(n => n.day == day), "news only grows and appears on its own day");
+                    seen = feed.Length;
+                }
+                var all = m.GetNews();
+                var breaking = all.Where(n => n.kind == NewsRules.Breaking).ToArray();
+                Check(breaking.Length == NewsRules.ShocksPerTurn && breaking.All(b => NewsRules.ShockCompanies.Contains(b.companyId)), "two breaking stories on pattern companies");
+                foreach (var b in breaking)
+                {
+                    var r = all.Single(n => n.kind == NewsRules.Rumor && n.companyId == b.companyId);
+                    Check(r.day == b.day - NewsRules.RumorLeadDays && r.eventDay == b.day && r.accuracyPercent == NewsRules.RumorAccuracyPercent, "rumor comes three days early and names the day");
+                    Check(Math.Sign(b.moveBps) == b.direction && b.text.Contains(b.companyId), "breaking news states the real move");
+                    total++; if (r.direction == b.direction) right++;
+                }
             }
             double rate = 100.0 * right / total;
             Check(rate > NewsRules.RumorAccuracyPercent - 8 && rate < NewsRules.RumorAccuracyPercent + 8, "rumor accuracy is close to the stated " + NewsRules.RumorAccuracyPercent + "% (got " + rate.ToString("0.0") + "%)");
-            Check(!Pair(5).plain.GetNews().Any() && Pair(5).plain.GetMission() == null, "news and missions stay off unless enabled");
+            var off = Live(5, false); Finish(off);
+            Check(!off.GetNews().Any() && off.GetMission() == null, "news and missions stay off unless enabled");
         }
 
         private static void Mission()
@@ -124,21 +174,16 @@ namespace BlackWhale.Tests
             var seen = new HashSet<string>();
             for (int seed = 1; seed <= 60; seed++)
             {
-                var m = Pair(seed).news;
+                var m = Live(seed);
                 var mission = m.GetMission();
                 Check(mission != null && mission.rewardBps == NewsRules.MissionRewardBps && !string.IsNullOrEmpty(mission.title), "normal turn has a public mission");
                 seen.Add(mission.id);
-                // 미리 실제 시세로 속보 기업을 알아낸 뒤, P1은 미션 기업 + 속보 기업 + 나머지로 4개 기업을 30일 내내 들고 간다.
-                var probe = Pair(seed);
-                var shockCompanies = InvestmentRules.CompanyIds.Where(c => !Actual(probe.news, 1, c).SequenceEqual(Actual(probe.plain, 1, c))).ToList();
-                var hold = new List<string>();
-                if (mission.companyId != null) hold.Add(mission.companyId);
-                foreach (var c in shockCompanies.Concat(InvestmentRules.CompanyIds.Where(c => c != "BANK"))) if (!hold.Contains(c) && hold.Count < 4) hold.Add(c);
-                m.BeginLiveTrading();
+                // P1: 속보가 날 수 있는 FOOD·AUTO·SPACE + 미션 기업(겹치면 AI)을 30일 내내 → 네 미션 모두 성공하는 보유
+                var hold = new List<string>(NewsRules.ShockCompanies);
+                hold.Add(mission.companyId != null && !hold.Contains(mission.companyId) ? mission.companyId : "AI");
                 int[] sizes = { 8, 8, 7, 7 };
-                for (int i = 0; i < hold.Count; i++)
-                    Check(m.SetPosition(Ctx(1, Protocol.Investment, "P1"), new ShareOrder { companyId = hold[i], targetShares = sizes[i] }).Success, "P1 position");
-                m.LockPortfolios();
+                for (int i = 0; i < hold.Count; i++) Hold(m, "P1", hold[i], sizes[i]);
+                Finish(m);
                 var board = m.SettleTurn(Ctx(1, Protocol.Reveal));
                 var detail = m.GetSettlementDetail(1).ToDictionary(p => p.playerId);
                 var p1 = board.rows.Single(r => r.playerId == "P1");
@@ -171,6 +216,7 @@ namespace BlackWhale.Tests
             clock.Seconds = start + 30 * StockRules.DaySeconds - 0.01; room.Tick();
             var s1 = room.Snapshot();
             Check(s1.news.Count(n => n.kind == NewsRules.Breaking) == NewsRules.ShocksPerTurn, "live trading publishes the breaking news");
+            Check(s1.moods.Any(x => x.companyId == "AI") && DtoCopy.Copy(s1).moods.Length == s1.moods.Length, "live trading publishes moods");
             Check(DtoCopy.Copy(s1).news.Length == s1.news.Length && DtoCopy.Copy(s1).mission.id == s1.mission.id, "client copy keeps news and mission");
             int swapTurn = SwapRules.Turns.FirstOrDefault();
             while (room.Snapshot().phase != Protocol.Ended)

@@ -734,6 +734,7 @@ namespace BlackWhale.Flow
                 swapTurns = StockMode ? (int[])SwapRules.Turns.Clone() : new int[0], swapBonusPercent = SwapRules.BonusPercent,
                 news = StockMode && turn > 0 && market is IMarketNews feed ? feed.GetNews() : new MarketNews[0],
                 mission = StockMode && turn > 0 && market is IMarketNews missionFeed ? missionFeed.GetMission() : null,
+                moods = StockMode && turn > 0 && market is IMarketNews moodFeed ? moodFeed.GetMoods() : new CompanyMood[0],
                 shareMarket = StockMode && turn > 0 ? Stock.GetShareMarket() : new CompanyShareState[0],
                 windowInformation = WindowMode, publicSelectionActive = PublicPicking, publicSelectionIndex = publicPickIndex,
                 publicSelectionPlayerId = PublicPicking ? order[publicPickIndex] : "",

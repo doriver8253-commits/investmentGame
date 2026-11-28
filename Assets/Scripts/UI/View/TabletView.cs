@@ -406,7 +406,7 @@ namespace BlackWhale.UI.View
         private static string NewsColored(MarketNews n)
         {
             if (n == null) return "";
-            string color = n.kind == NewsRules.Rumor ? "#FFD166" : n.direction > 0 ? "#FF6B6B" : "#6BA8FF";
+            string color = n.kind == NewsRules.Rumor || n.kind == NewsRules.Warning ? "#FFD166" : n.direction > 0 ? "#FF6B6B" : "#6BA8FF";
             return "<color=" + color + "><b>" + n.text + "</b></color>";
         }
 
@@ -540,6 +540,9 @@ namespace BlackWhale.UI.View
                     // 교환 턴 바로 다음 턴: 다시 내 계좌로 돌아왔다고 알려 준다.
                     if (!s.swapTurn && s.phase == Protocol.Info && s.swapTurns != null && s.swapTurns.Contains(s.turn - 1))
                         ShowBannerAlways("<color=" + SwapColor + "><b>교환 턴 끝!</b></color> 이번 턴부터 다시 <b>내 계좌</b>를 운용합니다.");
+                    // 1턴: 실시간 시장의 기업 성격 안내(한 번)
+                    if (s.phase == Protocol.Info && s.turn == 1 && s.mission != null)
+                        ShowBannerAlways("<b>기업 성격</b>  AUTO 패턴대로 · FOOD 사람 많을수록 출렁 · <color=#FF6B6B>AI 몰리면 붕괴</color> · <color=#7CFFB2>BIO 쌓이면 급등</color> · SPACE 며칠씩 추세");
                     // 이번 턴 미션 안내
                     if (s.phase == Protocol.Info && s.mission != null)
                         ShowBannerAlways("<color=" + MissionColor + "><b>이번 턴 미션 · " + s.mission.title + "</b></color>  " + s.mission.description);
@@ -575,7 +578,7 @@ namespace BlackWhale.UI.View
                 {
                     ClearBanners(); // 쌓인 알림보다 뉴스가 먼저
                     for (int i = _lastNewsCount; i < newsCount; i++) ShowBannerAlways(NewsColored(s.news[i]));
-                    UiSound.Play(s.news[newsCount - 1].kind == NewsRules.Breaking ? UiSound.Kind.Turn : UiSound.Kind.Coin);
+                    UiSound.Play(s.news[newsCount - 1].kind == NewsRules.Breaking || s.news[newsCount - 1].kind == NewsRules.Event ? UiSound.Kind.Turn : UiSound.Kind.Coin);
                 }
                 _lastNewsCount = newsCount;
             }

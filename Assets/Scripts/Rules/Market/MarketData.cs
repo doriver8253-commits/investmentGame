@@ -68,5 +68,20 @@ namespace BlackWhale.Rules
         { return Array.IndexOf(companies[companyId].publicBundleIndices, bundleIndex) >= 0; }
 
         public int[] AllDays(string companyId) { return (int[])companies[companyId].dailyChangesBps.Clone(); }
+
+        /// <summary>실시간 시장: fromDay부터 끝까지 같은 만큼 옮긴다(그날의 추가 등락이 이후 날짜에도 이어짐).</summary>
+        public void Shift(string companyId, int fromDay, int bps)
+        {
+            var values = companies[companyId].dailyChangesBps;
+            for (int day = Math.Max(1, fromDay); day < values.Length; day++) values[day] += bps;
+        }
+
+        /// <summary>개발자 되돌리기용: 지금 값을 저장하고, 호출하면 그 값으로 되돌린다.</summary>
+        public Action Snapshot()
+        {
+            var saved = new Dictionary<string, int[]>();
+            foreach (var pair in companies) saved[pair.Key] = (int[])pair.Value.dailyChangesBps.Clone();
+            return () => { foreach (var pair in saved) companies[pair.Key].dailyChangesBps = (int[])pair.Value.Clone(); };
+        }
     }
 }
