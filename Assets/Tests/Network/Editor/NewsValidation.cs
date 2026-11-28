@@ -27,6 +27,7 @@ namespace BlackWhale.Tests
             run("live-price-leaves-the-first-visible-range", NoCeiling);
             run("rumor-three-days-early-then-breaking-news", Feed);
             run("mission-bonus-for-clearing-player-only", Mission);
+            run("game-chart-axis-leaves-room-above-and-below", ChartAxis);
             run("room-publishes-news-moods-and-mission-and-skips-mission-on-swap-turn", Room);
             return names.ToArray();
         }
@@ -167,6 +168,18 @@ namespace BlackWhale.Tests
             Check(rate > NewsRules.RumorAccuracyPercent - 8 && rate < NewsRules.RumorAccuracyPercent + 8, "rumor accuracy is close to the stated " + NewsRules.RumorAccuracyPercent + "% (got " + rate.ToString("0.0") + "%)");
             var off = Live(5, false); Finish(off);
             Check(!off.GetNews().Any() && off.GetMission() == null, "news and missions stay off unless enabled");
+        }
+
+        private static void ChartAxis()
+        {
+            var values = new[] { 0, 1200, -800, 300 };
+            var r = BlackWhale.UI.Presentation.ChartVerticalRange.OpenEnded(values);
+            double top = r.Fraction(values.Max()), bottom = r.Fraction(values.Min());
+            Check(top < .8 && bottom > .2 && top - bottom < .56, "visible points use only the middle of the chart, so their high and low do not look like a ceiling and floor");
+            var grown = BlackWhale.UI.Presentation.ChartVerticalRange.OpenEnded(values.Concat(new[] { -5000 }));
+            Check(grown.MinBps < -5000 && grown.Fraction(-5000) > .2, "a live breakout widens the axis instead of sticking to the edge");
+            var ticks = r.AxisTicks(3);
+            Check(ticks.Contains(0) && ticks.Length <= 3, "few axis numbers, always including 0%");
         }
 
         private static void Mission()

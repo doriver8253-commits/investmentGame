@@ -24,7 +24,7 @@ namespace BlackWhale.UI.View
         public static readonly Color32 FlatColor = new Color32(0xA0, 0xA0, 0xA0, 0xFF);
         public static readonly Color32 UnknownOpenColor = new Color32(0x6E, 0x6E, 0x6E, 0xFF);
         public static readonly Color32 SubGridColor = new Color32(0x1C, 0x1C, 0x1C, 0xFF);
-        public static readonly Color32 HiddenColor = new Color32(0x8C, 0x8C, 0x8C, 0x1C);
+        public static readonly Color32 HiddenColor = new Color32(0x8C, 0x8C, 0x8C, 0x50);
         public static readonly Color32 GridColor = new Color32(0x3A, 0x3A, 0x3A, 0xFF);
         public static readonly Color32 BandColor = new Color32(0xFF, 0xFF, 0xFF, 0x30); // 선택 네모칸과 같은 색
         public static readonly Color32 BandEdgeColor = new Color32(0xFF, 0xFF, 0xFF, 0xCC);
@@ -136,14 +136,15 @@ namespace BlackWhale.UI.View
         {
             _bars = bars ?? new DayBar[0];
             NoteReveal();
-            _verticalRange = ChartVerticalRange.FromVisibleValues(_bars.Where(b => b.Bps.HasValue).Select(b => b.Bps.Value)
+            // 위아래 여백을 크게 둬서 보이는 점들의 최고·최저가 천장·바닥처럼 보이지 않게 한다.
+            _verticalRange = ChartVerticalRange.OpenEnded(_bars.Where(b => b.Bps.HasValue).Select(b => b.Bps.Value)
                 .Concat(_bars.Where(b => b.Bps.HasValue && b.OpenBps.HasValue).Select(b => b.OpenBps.Value)));
             RefreshAxisLabels();
             SetVerticesDirty();
         }
 
         // 세로축 % 눈금: 가로 보조선 위치에 '+2%', '0%', '-1%'처럼 0일차 대비 수익률을 글자로 붙인다.
-        public const int AxisTickCount = 5;
+        public const int AxisTickCount = 3; // 눈금은 0%와 한두 개만(위·아래 끝 숫자가 한계처럼 보이지 않게)
         private RectTransform _axisLabelRoot;
         private string _axisKey;
         private void RefreshAxisLabels()
@@ -162,11 +163,12 @@ namespace BlackWhale.UI.View
             {
                 float f = (float)_verticalRange.Fraction(tick);
                 bool nearTop = f > .85f;
+                // 숫자는 왼쪽 끝에(오른쪽 hidden 안개 안에 범위처럼 보이지 않게)
                 var label = UiKit.Label(_axisLabelRoot, DisplayFormat.Percent(tick), 9,
-                    tick == 0 ? (Color)ZeroColor : Palette.SubText, nearTop ? TextAnchor.UpperRight : TextAnchor.LowerRight);
+                    tick == 0 ? (Color)ZeroColor : Palette.SubText, nearTop ? TextAnchor.UpperLeft : TextAnchor.LowerLeft);
                 label.name = "AxisTick_" + tick;
                 label.horizontalOverflow = HorizontalWrapMode.Overflow;
-                UiKit.Place(label.rectTransform, new Vector2(1, f), new Vector2(1, nearTop ? 1 : 0), new Vector2(-2, nearTop ? -1 : 1), new Vector2(48, 12));
+                UiKit.Place(label.rectTransform, new Vector2(0, f), new Vector2(0, nearTop ? 1 : 0), new Vector2(2, nearTop ? -1 : 1), new Vector2(48, 12));
             }
         }
 
@@ -363,14 +365,14 @@ namespace BlackWhale.UI.View
                 float left = DayAxis.LeftX(26, r.xMin, r.width);
                 Quad(vh, left, r.yMin, r.xMax, r.yMax, new Color32(0x14, 0x14, 0x14, 0xF0));
             }
-            // 미열람 날짜: 칸 전체 음영(공개 연출 중 아직 선이 지나가지 않은 공개 날짜도 가려 둔다)
+            // 미열람 날짜는 칸 전체를 회색 기둥으로 칠하지 않는다(위아래 끝이 있는 상자처럼 보여 천장·바닥을 암시함).
+            // 대신 0% 기준선 위에 아주 작은 점만 찍어 '아직 모르는 날'임을 표시한다.
             for (int i = 0; i < _bars.Length; i++)
             {
-                bool waiting = _bars[i].Source == DailyBarModel.RevealedSource && _bars[i].Day + 0.5f > sweep;
-                if (_bars[i].State != DayBarState.Hidden && !waiting) continue;
+                if (_bars[i].State != DayBarState.Hidden) continue;
                 if (_hiddenTail && _bars[i].Day >= 26) continue;
-                float x0 = DayAxis.LeftX(_bars[i].Day, r.xMin, r.width);
-                Quad(vh, x0 + 0.5f, r.yMin, x0 + slot - 0.5f, r.yMax, HiddenColor);
+                float cx0 = DayAxis.CenterX(_bars[i].Day, r.xMin, r.width);
+                Quad(vh, cx0 - 1f, zeroY - 1f, cx0 + 1f, zeroY + 1f, HiddenColor);
             }
 
             // 클릭 가능한 날짜(진입 가능 범위 또는 청산 가능 범위). 미열람 음영 위에 겹쳐 그린다.
